@@ -512,8 +512,9 @@ def generate_image(
 ):
     """Uses Adobe Firefly Generative AI to generate an image on a new layer with the specified layer name.
 
-    If there is an active selection, it will use that region for the generation. Otherwise it will generate
-    on the entire layer.
+    The generation always fills the entire canvas — Firefly's `text_to_image`
+    workflow does not honour an active selection. Use `generative_fill` instead
+    if you need the output bounded by a selection.
 
     Args:
         layer_name (str): Name for the layer that will be created and contain the generated image

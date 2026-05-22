@@ -840,8 +840,12 @@ const harmonizeLayer = async (command) => {
                         "_value": "targetEnum"
                     }
                 ],
-                "documentID": 60,
-                "layerID": 7,
+                // These were hardcoded to a stale recording (60 / 7) which
+                // made `syntheticGenHarmonize` operate on a phantom layer
+                // and return no usable layerID. Wire them to the actual
+                // active document and the layer we're harmonising.
+                "documentID": app.activeDocument.id,
+                "layerID": layerId,
                 "prompt": "",
                 "serviceID": "gen_harmonize",
                 "serviceOptionsList": {
@@ -886,7 +890,6 @@ const harmonizeLayer = async (command) => {
         ];
 
 
-        console.log(rasterizeLayer)
         if(rasterizeLayer) {
             commands.push({
                 _obj: "rasterizeLayer",
@@ -901,9 +904,13 @@ const harmonizeLayer = async (command) => {
         }
 
         let o = await action.batchPlay(commands, {});
-        let layerId = o[0].layerID;
+        // Renamed from `layerId` to avoid shadowing the outer binding —
+        // the BatchPlay payload above references the outer `layerId`,
+        // and a `let layerId` here put that earlier reference in the
+        // temporal dead zone.
+        let newLayerId = o[0].layerID;
 
-        let l = findLayer(layerId);
+        let l = findLayer(newLayerId);
         l.name = newLayerName;
     });
 };

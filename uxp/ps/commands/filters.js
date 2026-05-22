@@ -21,11 +21,12 @@
  * SOFTWARE.
  */
 
-const { app } = require("photoshop");  // For app references
+const { app, action } = require("photoshop");  // For app references
 
 const {
     findLayer,
-    execute
+    execute,
+    selectLayer
 } = require("./utils");  // For the utility functions used in your code
 
 const applyMotionBlur = async (command) => {
@@ -64,9 +65,77 @@ const applyGaussianBlur = async (command) => {
     });
 };
 
+const applyCameraRawFilter = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `applyCameraRawFilter : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        // Build the Camera Raw descriptor. The settings object only includes
+        // adjustments the caller specified — Photoshop's Camera Raw treats
+        // omitted keys as "no change", so we don't need to populate every
+        // possible slider.
+        let settings = options.settings || {};
+        let cameraRaw = { _obj: "Adobe Camera Raw Filter" };
+        for (let key of Object.keys(settings)) {
+            cameraRaw[key] = settings[key];
+        }
+
+        await action.batchPlay([cameraRaw], {});
+    });
+};
+
+const applySmartSharpen = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `applySmartSharpen : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            {
+                _obj: "smartSharpen",
+                amount: { _unit: "percentUnit", _value: options.amount },
+                radius: { _unit: "pixelsUnit", _value: options.radius },
+                noiseReduction: {
+                    _unit: "percentUnit",
+                    _value: options.noiseReduction,
+                },
+                blur: {
+                    _enum: "blurType",
+                    _value: options.blurType || "gaussianBlur",
+                },
+                preset: { _enum: "preset", _value: "customPreset" },
+                useLegacy: false,
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
     applyMotionBlur,
     applyGaussianBlur,
+    applyCameraRawFilter,
+    applySmartSharpen,
 };
 
 module.exports = {

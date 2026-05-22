@@ -1512,6 +1512,268 @@ def apply_motion_blur(layer_id: int, angle: int = 0, distance: float = 30):
     return sendCommand(command)
 
 
+@mcp.tool()
+def apply_camera_raw_filter(layer_id: int, settings: dict = {}):
+    """Applies the Adobe Camera Raw Filter to the layer with the specified ID.
+
+    Keys omitted from `settings` are left unchanged by Photoshop, so callers
+    only need to specify the adjustments they care about. Common keys
+    include: exposure, contrast, highlights, shadows, whites, blacks,
+    clarity, dehaze, vibrance, saturation, temperature, tint. Most accept
+    -100..100 except exposure (-5..5 stops) and temperature (-100..100 in
+    "as shot" mode, or absolute Kelvin in custom mode).
+
+    For non-destructive use, convert the target layer to a Smart Object
+    first via `convert_to_smart_object`.
+
+    Args:
+        layer_id (int): The ID of the layer to apply Camera Raw to.
+        settings (dict): Optional Camera Raw adjustments. Omitted keys are
+            left at their current values.
+    """
+
+    command = createCommand("applyCameraRawFilter", {
+        "layerId": layer_id,
+        "settings": settings,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_smart_sharpen(
+    layer_id: int,
+    amount: float = 100,
+    radius: float = 1.0,
+    noise_reduction: float = 10,
+    blur_type: str = "gaussianBlur",
+):
+    """Applies the Smart Sharpen filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The ID of the layer to sharpen.
+        amount (float): Sharpen amount as a percentage (0..500). Default 100.
+        radius (float): Sharpen radius in pixels (0.1..64). Default 1.0.
+        noise_reduction (float): Noise-reduction percentage (0..100). Default 10.
+        blur_type (str): Removal blur type — one of "gaussianBlur",
+            "lensBlur", or "motionBlur". Default "gaussianBlur".
+    """
+
+    command = createCommand("applySmartSharpen", {
+        "layerId": layer_id,
+        "amount": amount,
+        "radius": radius,
+        "noiseReduction": noise_reduction,
+        "blurType": blur_type,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def close_document(document_id: int = None, save_changes: str = "DO_NOT_SAVE_CHANGES"):
+    """Closes a Photoshop document, optionally specified by ID.
+
+    When `document_id` is omitted, closes the currently active document.
+
+    Args:
+        document_id (int, optional): The id of the document to close. Defaults
+            to the active document.
+        save_changes (str): One of "DO_NOT_SAVE_CHANGES" | "SAVE_CHANGES" |
+            "PROMPT_TO_SAVE_CHANGES". Default "DO_NOT_SAVE_CHANGES".
+    """
+
+    options = {"saveChanges": save_changes}
+    if document_id is not None:
+        options["documentId"] = document_id
+
+    command = createCommand("closeDocument", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def create_artboard(name: str, bounds: dict):
+    """Creates a new Artboard in the active document.
+
+    Args:
+        name (str): The artboard name.
+        bounds (dict): The artboard rectangle as
+            {"top": int, "left": int, "bottom": int, "right": int}
+            in pixels.
+    """
+
+    command = createCommand("createArtboard", {
+        "name": name,
+        "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_new_guide_layout(
+    columns: int = 0,
+    rows: int = 0,
+    column_gutter: float = 0,
+    row_gutter: float = 0,
+):
+    """Adds a New Guide Layout to the active document.
+
+    Rule-of-thirds is 3 columns + 3 rows with no gutter. Pass 0 for either
+    columns or rows to omit that axis (e.g. just a column grid).
+
+    Args:
+        columns (int): Number of columns (>=1) or 0 to skip the column axis.
+        rows (int): Number of rows (>=1) or 0 to skip the row axis.
+        column_gutter (float): Optional gutter between columns in pixels.
+        row_gutter (float): Optional gutter between rows in pixels.
+    """
+
+    if columns <= 0 and rows <= 0:
+        raise ValueError("add_new_guide_layout : at least one of columns or rows must be >= 1")
+
+    options = {}
+    if columns > 0:
+        options["columns"] = columns
+        options["columnGutter"] = column_gutter
+    if rows > 0:
+        options["rows"] = rows
+        options["rowGutter"] = row_gutter
+
+    command = createCommand("addNewGuideLayout", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_solid_color_fill_layer(layer_id: int, color: dict):
+    """Adds a Solid Color fill layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The ID of the layer to anchor the new fill layer above.
+        color (dict): The fill color as {"red": int, "green": int, "blue": int}
+            (each 0..255).
+    """
+
+    command = createCommand("addSolidColorFillLayer", {
+        "layerId": layer_id,
+        "color": color,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_selective_color_adjustment_layer(
+    layer_id: int,
+    corrections: dict,
+    method: str = "relative",
+):
+    """Adds a Selective Color adjustment layer above the layer with the specified ID.
+
+    Selective Color tweaks the CMYK component of each color bucket separately.
+    Each correction value is -100..100; positive cyan adds cyan, negative
+    adds red, and so on. Only include the buckets you want to adjust.
+
+    Args:
+        layer_id (int): The ID of the layer to anchor the new adjustment above.
+        corrections (dict): Per-bucket CMYK adjustments. Bucket keys: reds,
+            yellows, greens, cyans, blues, magentas, whites, neutrals,
+            blacks. Each value is a dict with optional keys cyan, magenta,
+            yellow, black (each -100..100). Example:
+                {"reds": {"cyan": -20, "magenta": 10}, "neutrals": {"black": 5}}
+        method (str): "relative" (default) or "absolute".
+    """
+
+    command = createCommand("addSelectiveColorAdjustmentLayer", {
+        "layerId": layer_id,
+        "corrections": corrections,
+        "method": method,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def convert_to_smart_object(layer_id: int):
+    """Converts the layer with the specified ID into a Smart Object.
+
+    Used before applying Camera Raw or other filters non-destructively, or
+    to package multiple layers into a single editable unit.
+
+    Args:
+        layer_id (int): The ID of the layer to convert.
+    """
+
+    command = createCommand("convertToSmartObject", {
+        "layerId": layer_id,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def merge_selected_layers(layer_ids: list[int]):
+    """Merges the specified layers into a single layer.
+
+    Differs from `flatten_all_layers` which collapses the whole stack. Pass
+    at least two layer ids.
+
+    Args:
+        layer_ids (list[int]): Two or more layer ids to merge together.
+    """
+
+    command = createCommand("mergeSelectedLayers", {
+        "layerIds": layer_ids,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def spot_heal_area(layer_id: int, bounds: dict):
+    """Runs a content-aware fill over the specified rectangular area on the layer.
+
+    The deterministic batch-play equivalent of "Spot Healing Brush over
+    this rectangle" — selects the area, content-aware-fills it, and clears
+    the selection.
+
+    Args:
+        layer_id (int): The ID of the layer to heal.
+        bounds (dict): Rectangular area to heal as
+            {"top": int, "left": int, "bottom": int, "right": int}
+            in pixels.
+    """
+
+    command = createCommand("spotHealArea", {
+        "layerId": layer_id,
+        "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_object(layer_id: int, bounds: dict):
+    """Runs Photoshop's Object Selection AI within a rectangular hint area.
+
+    Equivalent to drawing a rectangle with the Object Selection Tool: PS
+    finds the most prominent object inside the bounding box and selects it.
+
+    Args:
+        layer_id (int): The ID of the layer to operate on.
+        bounds (dict): The hint rectangle as
+            {"top": int, "left": int, "bottom": int, "right": int}
+            in pixels.
+    """
+
+    command = createCommand("selectObject", {
+        "layerId": layer_id,
+        "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""

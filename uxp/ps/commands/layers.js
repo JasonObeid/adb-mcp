@@ -950,6 +950,113 @@ const getLayerImage = async (command) => {
     return out;
 };
 
+const convertToSmartObject = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `convertToSmartObject : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            // Convert (one or more selected layers) to a Smart Object.
+            { _obj: "newPlacedLayer" },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
+const mergeSelectedLayers = async (command) => {
+    let options = command.options;
+    let layerIds = options.layerIds;
+
+    if (!Array.isArray(layerIds) || layerIds.length < 2) {
+        throw new Error(
+            `mergeSelectedLayers : layerIds must be an array of at least 2 layer ids`
+        );
+    }
+
+    let layers = [];
+    for (const layerId of layerIds) {
+        let layer = findLayer(layerId);
+        if (!layer) {
+            throw new Error(
+                `mergeSelectedLayers : Could not find layerId : ${layerId}`
+            );
+        }
+        layers.push(layer);
+    }
+
+    await execute(async () => {
+        // Multi-select the input layers, then run the "Merge Layers" command.
+        for (let i = 0; i < layers.length; i++) {
+            selectLayer(layers[i], i === 0);
+        }
+
+        let commands = [{ _obj: "mergeLayersNew" }];
+        await action.batchPlay(commands, {});
+    });
+};
+
+const spotHealArea = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let bounds = options.bounds;  // { top, left, bottom, right }
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `spotHealArea : Could not find layerId : ${layerId}`
+        );
+    }
+    if (!bounds || typeof bounds.top !== "number") {
+        throw new Error(
+            `spotHealArea : bounds (top/left/bottom/right) is required`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        // Make a rectangular selection over the area to heal, then run a
+        // content-aware fill — the deterministic batch-play equivalent of
+        // "Spot Healing Brush over this rectangle."
+        await app.activeDocument.selection.selectRectangle(
+            bounds,
+            constants.SelectionType.REPLACE,
+            0,
+            true
+        );
+
+        let commands = [
+            {
+                _obj: "fill",
+                using: { _enum: "fillContents", _value: "contentAware" },
+                contentAwareColorAdaptationFill: true,
+                contentAwareRotateFill: false,
+                opacity: { _unit: "percentUnit", _value: 100 },
+                mode: { _enum: "blendMode", _value: "normal" },
+            },
+            // Drop the selection so subsequent ops aren't constrained to it.
+            {
+                _obj: "set",
+                _target: [{ _ref: "channel", _property: "selection" }],
+                to: { _enum: "ordinal", _value: "none" },
+            },
+        ];
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
     renameLayers,
     getLayerImage,
@@ -976,6 +1083,9 @@ const commandHandlers = {
     createMultiLineTextLayer,
     createSingleLineTextLayer,
     createPixelLayer,
+    convertToSmartObject,
+    mergeSelectedLayers,
+    spotHealArea,
 };
 
 module.exports = {

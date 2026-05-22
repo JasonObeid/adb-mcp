@@ -515,6 +515,120 @@ const createDocument = async (command) => {
     });
 };
 
+const closeDocument = async (command) => {
+    let options = command.options || {};
+    let documentId = options.documentId;
+    let saveOption = (options.saveChanges || "DO_NOT_SAVE_CHANGES").toUpperCase();
+
+    let saveOptions = {
+        "DO_NOT_SAVE_CHANGES": constants.SaveOptions.DONOTSAVECHANGES,
+        "SAVE_CHANGES": constants.SaveOptions.SAVECHANGES,
+        "PROMPT_TO_SAVE_CHANGES": constants.SaveOptions.PROMPTTOSAVECHANGES,
+    };
+    let saveOpt = saveOptions[saveOption];
+    if (!saveOpt) {
+        throw new Error(
+            `closeDocument : Unknown saveChanges value : ${saveOption}. ` +
+            `Use DO_NOT_SAVE_CHANGES | SAVE_CHANGES | PROMPT_TO_SAVE_CHANGES.`
+        );
+    }
+
+    // Default to the active document when no id is supplied.
+    let target = null;
+    if (typeof documentId === "number") {
+        for (let doc of app.documents) {
+            if (doc.id === documentId) {
+                target = doc;
+                break;
+            }
+        }
+        if (!target) {
+            throw new Error(
+                `closeDocument : Could not find documentId : ${documentId}`
+            );
+        }
+    } else {
+        target = app.activeDocument;
+    }
+
+    await execute(async () => {
+        await target.close(saveOpt);
+    });
+};
+
+const createArtboard = async (command) => {
+    let options = command.options;
+    let name = options.name || "Artboard 1";
+    let bounds = options.bounds;  // { top, left, bottom, right }
+
+    if (!bounds || typeof bounds.top !== "number") {
+        throw new Error(
+            `createArtboard : bounds (top/left/bottom/right) is required`
+        );
+    }
+
+    await execute(async () => {
+        let commands = [
+            {
+                _obj: "make",
+                _target: [{ _ref: "artboardSection" }],
+                artboardRect: {
+                    _obj: "classFloatRect",
+                    top: bounds.top,
+                    left: bounds.left,
+                    bottom: bounds.bottom,
+                    right: bounds.right,
+                },
+                using: {
+                    _obj: "artboardSection",
+                    name: name,
+                },
+            },
+        ];
+        await action.batchPlay(commands, {});
+    });
+};
+
+const addNewGuideLayout = async (command) => {
+    let options = command.options;
+    let columns = options.columns;  // int or null
+    let rows = options.rows;        // int or null
+    let columnGutter = options.columnGutter;  // pixels or null
+    let rowGutter = options.rowGutter;        // pixels or null
+
+    if (!columns && !rows) {
+        throw new Error(
+            `addNewGuideLayout : at least one of columns or rows is required`
+        );
+    }
+
+    await execute(async () => {
+        let descriptor = {
+            _obj: "newGuideGrid",
+            guideTarget: { _enum: "guideTarget", _value: "guideTargetCanvas" },
+        };
+        if (columns) {
+            descriptor.columns = {
+                _obj: "guideGrid",
+                count: columns,
+                gutter: typeof columnGutter === "number"
+                    ? { _unit: "pixelsUnit", _value: columnGutter }
+                    : { _unit: "pixelsUnit", _value: 0 },
+            };
+        }
+        if (rows) {
+            descriptor.rows = {
+                _obj: "guideGrid",
+                count: rows,
+                gutter: typeof rowGutter === "number"
+                    ? { _unit: "pixelsUnit", _value: rowGutter }
+                    : { _unit: "pixelsUnit", _value: 0 },
+            };
+        }
+        await action.batchPlay([descriptor], {});
+    });
+};
+
 const executeBatchPlayCommand = async (commands) => {
     let options = commands.options;
     let c = options.commands;
@@ -547,6 +661,9 @@ const commandHandlers = {
     saveDocument,
     saveDocumentAs,
     createDocument,
+    closeDocument,
+    createArtboard,
+    addNewGuideLayout,
 };
 
 module.exports = {

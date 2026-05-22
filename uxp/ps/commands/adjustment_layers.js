@@ -255,11 +255,122 @@ const addColorBalanceAdjustmentLayer = async (command) => {
     });
 };
 
+const addSolidColorFillLayer = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let color = options.color;  // { red, green, blue }
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `addSolidColorFillLayer : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            {
+                _obj: "make",
+                _target: [{ _ref: "contentLayer" }],
+                using: {
+                    _obj: "contentLayer",
+                    type: {
+                        _obj: "solidColorLayer",
+                        color: {
+                            _obj: "RGBColor",
+                            red: color.red,
+                            grain: color.green,
+                            blue: color.blue,
+                        },
+                    },
+                },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
+const addSelectiveColorAdjustmentLayer = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let corrections = options.corrections || {};
+    let method = (options.method || "relative").toLowerCase();
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `addSelectiveColorAdjustmentLayer : Could not find layerId : ${layerId}`
+        );
+    }
+
+    // Map color-bucket names to the descriptor `_enum: colors` value
+    // Photoshop expects.
+    const COLOR_ENUM = {
+        reds: "red",
+        yellows: "yellow",
+        greens: "green",
+        cyans: "cyan",
+        blues: "blue",
+        magentas: "magenta",
+        whites: "white",
+        neutrals: "neutrals",
+        blacks: "black",
+    };
+
+    let colorCorrection = [];
+    for (let bucket of Object.keys(corrections)) {
+        let enumValue = COLOR_ENUM[bucket];
+        if (!enumValue) {
+            throw new Error(
+                `addSelectiveColorAdjustmentLayer : unknown color bucket "${bucket}" — ` +
+                `use reds | yellows | greens | cyans | blues | magentas | whites | neutrals | blacks`
+            );
+        }
+        let v = corrections[bucket];
+        colorCorrection.push({
+            _obj: "colorCorrection",
+            colors: { _enum: "colors", _value: enumValue },
+            cyan: typeof v.cyan === "number" ? v.cyan : 0,
+            magenta: typeof v.magenta === "number" ? v.magenta : 0,
+            yellow: typeof v.yellow === "number" ? v.yellow : 0,
+            black: typeof v.black === "number" ? v.black : 0,
+        });
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            {
+                _obj: "make",
+                _target: [{ _ref: "adjustmentLayer" }],
+                using: {
+                    _obj: "adjustmentLayer",
+                    type: {
+                        _obj: "selectiveColor",
+                        method: { _enum: "correctionMethod", _value: method },
+                        colorCorrection: colorCorrection,
+                    },
+                },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
     addAdjustmentLayerBlackAndWhite,
     addBrightnessContrastAdjustmentLayer,
     addAdjustmentLayerVibrance,
-    addColorBalanceAdjustmentLayer
+    addColorBalanceAdjustmentLayer,
+    addSolidColorFillLayer,
+    addSelectiveColorAdjustmentLayer,
 }
 
 module.exports = {

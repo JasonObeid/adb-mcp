@@ -392,11 +392,53 @@ const invertSelection = async (command) => {
     });
 };
 
+const selectObject = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let bounds = options.bounds;  // { top, left, bottom, right }
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `selectObject : Could not find layerId : ${layerId}`
+        );
+    }
+    if (!bounds || typeof bounds.top !== "number") {
+        throw new Error(
+            `selectObject : bounds (top/left/bottom/right) is required`
+        );
+    }
+
+    return await execute(async () => {
+        selectLayer(layer, true);
+
+        // Object Selection's "Rectangle" mode in PS 2026: provide a hint
+        // rectangle and let the model find the most prominent object inside.
+        let commands = [
+            {
+                _obj: "autoSelectInside",
+                rectangle: {
+                    _obj: "rectangle",
+                    top: { _unit: "pixelsUnit", _value: bounds.top },
+                    left: { _unit: "pixelsUnit", _value: bounds.left },
+                    bottom: { _unit: "pixelsUnit", _value: bounds.bottom },
+                    right: { _unit: "pixelsUnit", _value: bounds.right },
+                },
+                sampleAllLayers: false,
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
     clearSelection,
     createMaskFromSelection,
     selectSubject,
     selectSky,
+    selectObject,
     cutSelectionToClipboard,
     copyMergedSelectionToClipboard,
     copySelectionToClipboard,

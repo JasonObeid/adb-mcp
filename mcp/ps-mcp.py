@@ -2455,10 +2455,7 @@ def apply_transform(
 @mcp.tool()
 def add_curves_adjustment_layer(
     layer_id: int,
-    curve_points: list = [
-        {"horizontal": 0, "vertical": 0},
-        {"horizontal": 255, "vertical": 255},
-    ],
+    curve_points: list = None,
     channel: str = "composite",
 ):
     """Adds a Curves adjustment layer above the layer with the specified ID.
@@ -2471,6 +2468,12 @@ def add_curves_adjustment_layer(
             the identity curve.
         channel (str): "composite" (RGB master), "red", "green", or "blue".
     """
+
+    if curve_points is None:
+        curve_points = [
+            {"horizontal": 0, "vertical": 0},
+            {"horizontal": 255, "vertical": 255},
+        ]
 
     command = createCommand("addCurvesAdjustmentLayer", {
         "layerId": layer_id,
@@ -2612,7 +2615,7 @@ def add_photo_filter_adjustment_layer(
 @mcp.tool()
 def add_channel_mixer_adjustment_layer(
     layer_id: int,
-    mixes: dict = {},
+    mixes: dict = None,
     monochrome: bool = False,
 ):
     """Adds a Channel Mixer adjustment layer above the layer with the specified ID.
@@ -2627,6 +2630,9 @@ def add_channel_mixer_adjustment_layer(
         monochrome (bool): When True, all output channels share one mix
             (true monochrome output). Default False.
     """
+
+    if mixes is None:
+        mixes = {}
 
     command = createCommand("addChannelMixerAdjustmentLayer", {
         "layerId": layer_id,

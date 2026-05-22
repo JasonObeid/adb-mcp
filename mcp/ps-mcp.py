@@ -1571,6 +1571,244 @@ def apply_smart_sharpen(
 
 
 @mcp.tool()
+def apply_unsharp_mask(
+    layer_id: int,
+    amount: float = 50,
+    radius: float = 1.0,
+    threshold: int = 0,
+):
+    """Applies the Unsharp Mask filter to the layer with the specified ID.
+
+    Sharpens by amplifying contrast at edges. Equivalent to
+    Filter > Sharpen > Unsharp Mask...
+
+    Args:
+        layer_id (int): The layer to sharpen.
+        amount (float): Sharpen amount as a percentage (1..500). Default 50.
+        radius (float): Edge detection radius in pixels (0.1..1000). Default 1.0.
+        threshold (int): Minimum edge tonal difference (0..255). Default 0.
+    """
+
+    command = createCommand("applyUnsharpMask", {
+        "layerId": layer_id,
+        "amount": amount,
+        "radius": radius,
+        "threshold": threshold,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_sharpen_edges(layer_id: int):
+    """Applies the Sharpen Edges filter to the layer with the specified ID.
+
+    Auto-detects edges and sharpens them. Takes no parameters.
+    Equivalent to Filter > Sharpen > Sharpen Edges.
+
+    Args:
+        layer_id (int): The layer to sharpen.
+    """
+
+    command = createCommand("applySharpenEdges", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_high_pass(layer_id: int, radius: float = 10):
+    """Applies the High Pass filter to the layer with the specified ID.
+
+    Retains edge detail above the radius; everything else turns 50% gray.
+    Commonly paired with a Soft Light / Overlay blend mode to sharpen.
+
+    Args:
+        layer_id (int): The layer to filter.
+        radius (float): Edge detail radius in pixels (0.1..1000). Default 10.
+    """
+
+    command = createCommand("applyHighPass", {
+        "layerId": layer_id,
+        "radius": radius,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_add_noise(
+    layer_id: int,
+    amount: float = 12.5,
+    distribution: str = "gaussian",
+    monochromatic: bool = False,
+):
+    """Applies the Add Noise filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to add noise to.
+        amount (float): Noise amount as a percentage (0.1..400). Default 12.5.
+        distribution (str): "gaussian" or "uniform". Default "gaussian".
+        monochromatic (bool): When True, applies grayscale noise only.
+            Default False.
+    """
+
+    command = createCommand("applyAddNoise", {
+        "layerId": layer_id,
+        "amount": amount,
+        "distribution": distribution,
+        "monochromatic": monochromatic,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_reduce_noise(
+    layer_id: int,
+    strength: int = 5,
+    preserve_details: int = 50,
+    reduce_color_noise: int = 25,
+    sharpen_details: int = 25,
+    remove_jpeg_artifact: bool = False,
+):
+    """Applies the Reduce Noise filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to denoise.
+        strength (int): Overall noise reduction strength (0..10). Default 5.
+        preserve_details (int): Detail preservation percentage (0..100).
+            Default 50.
+        reduce_color_noise (int): Color-noise reduction percentage (0..100).
+            Default 25.
+        sharpen_details (int): Sharpening percentage (0..100). Default 25.
+        remove_jpeg_artifact (bool): Remove JPEG compression artifacts.
+            Default False.
+    """
+
+    command = createCommand("applyReduceNoise", {
+        "layerId": layer_id,
+        "strength": strength,
+        "preserveDetails": preserve_details,
+        "reduceColorNoise": reduce_color_noise,
+        "sharpenDetails": sharpen_details,
+        "removeJpegArtifact": remove_jpeg_artifact,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_median_filter(layer_id: int, radius: float = 2):
+    """Applies the Median filter to the layer with the specified ID.
+
+    Replaces each pixel with the median of its neighborhood — useful for
+    reducing noise and posterizing.
+
+    Args:
+        layer_id (int): The layer to filter.
+        radius (float): Neighborhood radius in pixels (1..100). Default 2.
+    """
+
+    command = createCommand("applyMedianFilter", {
+        "layerId": layer_id,
+        "radius": radius,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_lens_correction(
+    layer_id: int,
+    auto_scale: bool = True,
+    remove_geometric_distortion: bool = True,
+    remove_chromatic_aberration: bool = True,
+    remove_vignette: bool = False,
+):
+    """Applies the Lens Correction filter to the layer with the specified ID.
+
+    Uses Photoshop's auto profile against the embedded EXIF lens data.
+    Manual distortion / chromatic / vignette tuning is not yet exposed.
+
+    Args:
+        layer_id (int): The layer to correct.
+        auto_scale (bool): Auto-scale to fit the corrected image. Default True.
+        remove_geometric_distortion (bool): Correct barrel/pincushion
+            distortion. Default True.
+        remove_chromatic_aberration (bool): Correct red/cyan and blue/yellow
+            fringing. Default True.
+        remove_vignette (bool): Correct lens vignette. Default False.
+    """
+
+    command = createCommand("applyLensCorrection", {
+        "layerId": layer_id,
+        "autoScale": auto_scale,
+        "removeGeometricDistortion": remove_geometric_distortion,
+        "removeChromaticAberration": remove_chromatic_aberration,
+        "removeVignette": remove_vignette,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_oil_paint_filter(
+    layer_id: int,
+    stylization: float = 5,
+    cleanliness: float = 5,
+    scale: float = 1,
+    bristle_detail: float = 5,
+    lighting_direction: float = 0,
+    shine: float = 1,
+):
+    """Applies the Oil Paint filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to stylize.
+        stylization (float): Brush stylization (0.1..10). Default 5.
+        cleanliness (float): Brush cleanliness (0..10). Default 5.
+        scale (float): Brush scale (0.1..10). Default 1.
+        bristle_detail (float): Bristle detail (0..10). Default 5.
+        lighting_direction (float): Lighting direction in degrees (-180..180).
+            Default 0.
+        shine (float): Lighting shine (0..10). Default 1.
+    """
+
+    command = createCommand("applyOilPaintFilter", {
+        "layerId": layer_id,
+        "stylization": stylization,
+        "cleanliness": cleanliness,
+        "scale": scale,
+        "bristleDetail": bristle_detail,
+        "lightingDirection": lighting_direction,
+        "shine": shine,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_clouds_filter(layer_id: int, difference: bool = False):
+    """Applies the Clouds filter (or Difference Clouds) to the layer.
+
+    Clouds generates fresh noise from the foreground/background colors;
+    Difference Clouds XORs new clouds with the existing pixels. Both take
+    no other parameters.
+
+    Args:
+        layer_id (int): The layer to render clouds onto.
+        difference (bool): When True, applies Difference Clouds instead of
+            Clouds. Default False.
+    """
+
+    command = createCommand("applyCloudsFilter", {
+        "layerId": layer_id,
+        "difference": difference,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
 def close_document(document_id: int = None, save_changes: str = "DO_NOT_SAVE_CHANGES"):
     """Closes a Photoshop document, optionally specified by ID.
 

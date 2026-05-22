@@ -37,7 +37,10 @@ const {
     hasActiveSelection,
     _saveDocumentAs,
     convertFontSize,
-    convertFromPhotoshopFontSize
+    convertFromPhotoshopFontSize,
+    tokenify,
+    createFile,
+    fileExists,
 } = require("./utils");
 
 
@@ -1300,19 +1303,46 @@ const exportSmartObjectContents = async (command) => {
     if (typeof filePath !== "string" || filePath.length === 0) {
         throw new Error(`exportSmartObjectContents : filePath is required`);
     }
+
+    // `placedLayerExportContents` is interactive in PS 2026 — neither the
+    // `null:` nor `in:` descriptor field is honoured and the action always
+    // pops a Save sheet. Drive the canonical headless equivalent instead:
+    // open the smart object contents (`placedLayerEditContents`), save the
+    // resulting doc to the requested path, then close it.
+
+    const sourceDocId = app.activeDocument.id;
+
     await execute(async () => {
         selectLayer(layer, true);
         await action.batchPlay(
             [
                 {
-                    _obj: "placedLayerExportContents",
+                    _obj: "placedLayerEditContents",
                     _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
-                    null: { _kind: "local", _path: filePath },
+                    _options: { dialogOptions: "dontDisplay" },
                 },
             ],
-            {},
+            { dialogOptions: "dontDisplay" },
         );
     });
+
+    if (app.activeDocument.id === sourceDocId) {
+        throw new Error(
+            `exportSmartObjectContents : placedLayerEditContents did not open ` +
+            `the smart-object source doc (still on document ${sourceDocId})`,
+        );
+    }
+
+    // The newly-opened smart-object contents doc is now active. Save it
+    // to the caller's path, then close it without committing.
+    const fileType = (filePath.split(".").pop() || "PSD").toUpperCase();
+    const result = await _saveDocumentAs(filePath, fileType);
+
+    await execute(async () => {
+        await app.activeDocument.closeWithoutSaving();
+    });
+
+    return result;
 };
 
 const replaceSmartObjectContents = async (command) => {
@@ -1326,6 +1356,13 @@ const replaceSmartObjectContents = async (command) => {
     if (typeof filePath !== "string" || filePath.length === 0) {
         throw new Error(`replaceSmartObjectContents : filePath is required`);
     }
+
+    // Replace reads FROM the file — must already exist with content.
+    if (!(await fileExists(filePath))) {
+        throw new Error(`replaceSmartObjectContents : file not found : ${filePath}`);
+    }
+    const pathToken = await tokenify(filePath);
+
     await execute(async () => {
         selectLayer(layer, true);
         await action.batchPlay(
@@ -1333,10 +1370,11 @@ const replaceSmartObjectContents = async (command) => {
                 {
                     _obj: "placedLayerReplaceContents",
                     _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
-                    null: { _kind: "local", _path: filePath },
+                    null: { _kind: "local", _path: pathToken },
+                    _options: { dialogOptions: "dontDisplay" },
                 },
             ],
-            {},
+            { dialogOptions: "dontDisplay" },
         );
     });
 };

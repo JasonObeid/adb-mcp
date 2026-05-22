@@ -561,6 +561,28 @@ const similarSelection = async (command) => {
     });
 };
 
+const applyContentAwareFill = async (command) => {
+    if (!hasActiveSelection()) {
+        throw new Error("applyContentAwareFill : Requires an active selection");
+    }
+    // PS exposes Content-Aware Fill as a fill op with `contentAware` as
+    // the fill source. The dedicated workspace (Edit > Content-Aware Fill...)
+    // is modal and not parametrically replayable.
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "fill",
+                    mode: { _enum: "blendMode", _value: "normal" },
+                    opacity: { _unit: "percentUnit", _value: 100 },
+                    using: { _enum: "fillContents", _value: "contentAware" },
+                },
+            ],
+            {},
+        );
+    });
+};
+
 const commandHandlers = {
     clearSelection,
     createMaskFromSelection,
@@ -585,6 +607,7 @@ const commandHandlers = {
     borderSelection,
     growSelection,
     similarSelection,
+    applyContentAwareFill,
 };
 
 module.exports = {

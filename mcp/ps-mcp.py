@@ -2059,6 +2059,71 @@ def similar_selection():
 
 
 @mcp.tool()
+def apply_content_aware_fill():
+    """Fills the active selection with content-aware pixels (Edit > Fill > Content-Aware).
+
+    Requires an active selection. Uses Photoshop's standard Content-Aware
+    fill — the Edit > Content-Aware Fill... workspace is modal and cannot
+    be replayed parametrically; use this tool for the equivalent non-modal
+    fill instead.
+    """
+
+    command = createCommand("applyContentAwareFill", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def reset_smart_object_transform(layer_id: int):
+    """Resets all transforms applied to a smart-object layer (Layer > Smart Objects > Reset Transform).
+
+    Returns the smart object to its original placed dimensions and rotation.
+
+    Args:
+        layer_id (int): The smart-object layer to reset.
+    """
+
+    command = createCommand("resetSmartObjectTransform", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def export_smart_object_contents(layer_id: int, file_path: str):
+    """Exports a smart object's embedded contents to a file (Layer > Smart Objects > Export Contents...).
+
+    Args:
+        layer_id (int): The smart-object layer to export.
+        file_path (str): Local destination path. The file format is
+            inferred from the file extension.
+    """
+
+    command = createCommand("exportSmartObjectContents", {
+        "layerId": layer_id,
+        "filePath": file_path,
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def replace_smart_object_contents(layer_id: int, file_path: str):
+    """Replaces a smart object's embedded contents with a new file (Layer > Smart Objects > Replace Contents...).
+
+    All transforms / smart filters applied to the smart object are
+    preserved and applied to the new content.
+
+    Args:
+        layer_id (int): The smart-object layer to replace.
+        file_path (str): Local source path. The file format is inferred
+            from the file extension.
+    """
+
+    command = createCommand("replaceSmartObjectContents", {
+        "layerId": layer_id,
+        "filePath": file_path,
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
 def ungroup_layers(layer_id: int):
     """Ungroups the layer group with the specified ID (Layer > Ungroup Layers).
 

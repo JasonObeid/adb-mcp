@@ -1261,6 +1261,79 @@ const linkLayers = async (command) => {
     });
 };
 
+const resetSmartObjectTransform = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`resetSmartObjectTransform : Could not find layerId : ${layerId}`);
+    }
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "placedLayerResetTransforms",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const exportSmartObjectContents = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let filePath = options.filePath;
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`exportSmartObjectContents : Could not find layerId : ${layerId}`);
+    }
+    if (typeof filePath !== "string" || filePath.length === 0) {
+        throw new Error(`exportSmartObjectContents : filePath is required`);
+    }
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "placedLayerExportContents",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                    null: { _kind: "local", _path: filePath },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const replaceSmartObjectContents = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let filePath = options.filePath;
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`replaceSmartObjectContents : Could not find layerId : ${layerId}`);
+    }
+    if (typeof filePath !== "string" || filePath.length === 0) {
+        throw new Error(`replaceSmartObjectContents : filePath is required`);
+    }
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "placedLayerReplaceContents",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                    null: { _kind: "local", _path: filePath },
+                },
+            ],
+            {},
+        );
+    });
+};
+
 const unlinkLayers = async (command) => {
     let options = command.options;
     let layerIds = options.layerIds || [];
@@ -1328,6 +1401,9 @@ const commandHandlers = {
     applyLayerMask,
     linkLayers,
     unlinkLayers,
+    resetSmartObjectTransform,
+    exportSmartObjectContents,
+    replaceSmartObjectContents,
 };
 
 module.exports = {

@@ -433,6 +433,21 @@ const selectObject = async (command) => {
     });
 };
 
+const selectAll = async (command) => {
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "set",
+                    _target: [{ _property: "selection", _ref: "channel" }],
+                    to: { _enum: "ordinal", _value: "allEnum" },
+                },
+            ],
+            {},
+        );
+    });
+};
+
 const commandHandlers = {
     clearSelection,
     createMaskFromSelection,
@@ -448,7 +463,8 @@ const commandHandlers = {
     selectPolygon,
     selectEllipse,
     selectRectangle,
-    invertSelection
+    invertSelection,
+    selectAll,
 };
 
 module.exports = {

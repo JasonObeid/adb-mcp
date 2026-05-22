@@ -1809,6 +1809,269 @@ def apply_clouds_filter(layer_id: int, difference: bool = False):
 
 
 @mcp.tool()
+def resize_image(
+    width: int = None,
+    height: int = None,
+    resolution: int = None,
+    constrain_proportions: bool = True,
+    scale_styles: bool = True,
+):
+    """Resizes the document's pixel dimensions (Image > Image Size...).
+
+    Pass any subset of width/height/resolution; omitted dimensions are
+    inferred from the others when constrain_proportions=True.
+
+    Args:
+        width (int, optional): New width in pixels.
+        height (int, optional): New height in pixels.
+        resolution (int, optional): New resolution in PPI.
+        constrain_proportions (bool): Preserve aspect ratio. Default True.
+        scale_styles (bool): Scale layer effects to match. Default True.
+    """
+
+    options = {
+        "constrainProportions": constrain_proportions,
+        "scaleStyles": scale_styles,
+    }
+    if width is not None:
+        options["width"] = width
+    if height is not None:
+        options["height"] = height
+    if resolution is not None:
+        options["resolution"] = resolution
+
+    command = createCommand("resizeImage", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def resize_canvas(
+    width: int = None,
+    height: int = None,
+    anchor: str = "middleCenter",
+    relative: bool = False,
+):
+    """Resizes the document canvas (Image > Canvas Size...).
+
+    Args:
+        width (int, optional): New canvas width in pixels.
+        height (int, optional): New canvas height in pixels.
+        anchor (str): One of the 9-position anchors — topLeft, topCenter,
+            topRight, middleLeft, middleCenter, middleRight, bottomLeft,
+            bottomCenter, bottomRight. Default "middleCenter".
+        relative (bool): When True, width/height are deltas instead of
+            absolute sizes. Default False.
+    """
+
+    options = {"anchor": anchor, "relative": relative}
+    if width is not None:
+        options["width"] = width
+    if height is not None:
+        options["height"] = height
+
+    command = createCommand("resizeCanvas", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def rotate_canvas(angle: float = 0):
+    """Rotates the entire document by an arbitrary angle (Image > Image Rotation > Arbitrary).
+
+    Positive angles rotate clockwise. Use 90 / -90 / 180 for the cardinal
+    rotations from the menu.
+
+    Args:
+        angle (float): Rotation angle in degrees (-180..180).
+    """
+
+    command = createCommand("rotateCanvas", { "angle": angle })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def trim_document(
+    trim_based_on: str = "transparency",
+    top: bool = True,
+    bottom: bool = True,
+    left: bool = True,
+    right: bool = True,
+):
+    """Trims uniform edges from the document (Image > Trim...).
+
+    Args:
+        trim_based_on (str): "transparency" | "topLeftPixel" |
+            "bottomRightPixel". Default "transparency".
+        top (bool): Trim the top edge. Default True.
+        bottom (bool): Trim the bottom edge. Default True.
+        left (bool): Trim the left edge. Default True.
+        right (bool): Trim the right edge. Default True.
+    """
+
+    command = createCommand("trimDocument", {
+        "trimBasedOn": trim_based_on,
+        "top": top,
+        "bottom": bottom,
+        "left": left,
+        "right": right,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def undo():
+    """Undoes the last action (Edit > Undo, Cmd+Z)."""
+
+    command = createCommand("undoCommand", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def redo():
+    """Redoes the last undone action (Edit > Redo, Cmd+Shift+Z)."""
+
+    command = createCommand("redoCommand", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def paste_into():
+    """Pastes clipboard contents inside the active selection (Edit > Paste Special > Paste Into).
+
+    The pasted content is placed on a new layer with a layer mask that
+    confines it to the current selection.
+    """
+
+    command = createCommand("pasteInto", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def paste_outside():
+    """Pastes clipboard contents outside the active selection (Edit > Paste Special > Paste Outside).
+
+    The pasted content is placed on a new layer with an inverted layer
+    mask that excludes the current selection.
+    """
+
+    command = createCommand("pasteOutside", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_all():
+    """Selects the entire canvas (Select > All, Cmd+A)."""
+
+    command = createCommand("selectAll", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def ungroup_layers(layer_id: int):
+    """Ungroups the layer group with the specified ID (Layer > Ungroup Layers).
+
+    The group's child layers are promoted to the parent and the group
+    container is removed.
+
+    Args:
+        layer_id (int): The ID of the layer group to ungroup.
+    """
+
+    command = createCommand("ungroupLayers", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def merge_visible_layers(duplicate: bool = False):
+    """Merges all currently visible layers (Layer > Merge Visible).
+
+    Args:
+        duplicate (bool): When True, merges into a new stamped layer
+            without altering the original layers (Cmd+Opt+Shift+E behavior).
+            Default False (destructive merge).
+    """
+
+    command = createCommand("mergeVisibleLayers", { "duplicate": duplicate })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_style_enabled(layer_id: int, enabled: bool = True):
+    """Toggles layer effects visibility (Layer > Layer Style > Show/Hide All Effects).
+
+    Args:
+        layer_id (int): The layer whose effects to toggle.
+        enabled (bool): True shows the effects, False hides them.
+    """
+
+    command = createCommand("setLayerStyleEnabled", {
+        "layerId": layer_id,
+        "enabled": enabled,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_mask_enabled(layer_id: int, enabled: bool = True):
+    """Toggles a layer mask's effect (Layer > Layer Mask > Enable/Disable).
+
+    Args:
+        layer_id (int): The layer whose mask to toggle.
+        enabled (bool): True enables the mask (Shift-click hides
+            disable state), False disables it.
+    """
+
+    command = createCommand("setLayerMaskEnabled", {
+        "layerId": layer_id,
+        "enabled": enabled,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_layer_mask(layer_id: int):
+    """Applies and removes the layer mask (Layer > Layer Mask > Apply).
+
+    Rasterizes the mask into the layer's pixel data and deletes the mask
+    channel.
+
+    Args:
+        layer_id (int): The layer whose mask to apply.
+    """
+
+    command = createCommand("applyLayerMask", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def link_layers(layer_ids: list):
+    """Links two or more layers (Layer > Link Layers).
+
+    Linked layers transform together when one is moved or scaled.
+
+    Args:
+        layer_ids (list): IDs of the layers to link (at least 2).
+    """
+
+    command = createCommand("linkLayers", { "layerIds": layer_ids })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def unlink_layers(layer_ids: list):
+    """Removes link relationships on the specified layers (Layer > Unlink Layers).
+
+    Args:
+        layer_ids (list): IDs of the layers to unlink (at least 1).
+    """
+
+    command = createCommand("unlinkLayers", { "layerIds": layer_ids })
+    return sendCommand(command)
+
+
+@mcp.tool()
 def close_document(document_id: int = None, save_changes: str = "DO_NOT_SAVE_CHANGES"):
     """Closes a Photoshop document, optionally specified by ID.
 

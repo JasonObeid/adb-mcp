@@ -644,6 +644,138 @@ const executeBatchPlayCommand = async (commands) => {
     return out;
 }
 
+const resizeImage = async (command) => {
+    let options = command.options;
+    let width = options.width;
+    let height = options.height;
+    let resolution = options.resolution;
+
+    await execute(async () => {
+        let to = { _obj: "imageSize" };
+        if (typeof width === "number") {
+            to.width = { _unit: "pixelsUnit", _value: width };
+        }
+        if (typeof height === "number") {
+            to.height = { _unit: "pixelsUnit", _value: height };
+        }
+        if (typeof resolution === "number") {
+            to.resolution = { _unit: "densityUnit", _value: resolution };
+        }
+        to.constrainProportions = options.constrainProportions !== false;
+        to.scaleStyles = options.scaleStyles !== false;
+        await action.batchPlay([to], {});
+    });
+};
+
+const resizeCanvas = async (command) => {
+    let options = command.options;
+    let width = options.width;
+    let height = options.height;
+    let anchor = options.anchor || "middleCenter";
+
+    // PS canvas-size anchor combines horizontal + vertical enums. Accept
+    // a 9-position string (topLeft, topCenter, topRight, middleLeft,
+    // middleCenter, middleRight, bottomLeft, bottomCenter, bottomRight)
+    // and split it.
+    const horizontalByAnchor = {
+        topLeft: "left", middleLeft: "left", bottomLeft: "left",
+        topCenter: "center", middleCenter: "center", bottomCenter: "center",
+        topRight: "right", middleRight: "right", bottomRight: "right",
+    };
+    const verticalByAnchor = {
+        topLeft: "top", topCenter: "top", topRight: "top",
+        middleLeft: "center", middleCenter: "center", middleRight: "center",
+        bottomLeft: "bottom", bottomCenter: "bottom", bottomRight: "bottom",
+    };
+
+    await execute(async () => {
+        let cmd = {
+            _obj: "canvasSize",
+            horizontal: { _enum: "horizontalLocation", _value: horizontalByAnchor[anchor] || "center" },
+            vertical: { _enum: "verticalLocation", _value: verticalByAnchor[anchor] || "center" },
+        };
+        if (typeof width === "number") {
+            cmd.width = { _unit: "pixelsUnit", _value: width };
+        }
+        if (typeof height === "number") {
+            cmd.height = { _unit: "pixelsUnit", _value: height };
+        }
+        if (options.relative === true) {
+            cmd.relative = true;
+        }
+        await action.batchPlay([cmd], {});
+    });
+};
+
+const rotateCanvas = async (command) => {
+    let options = command.options;
+    let angle = typeof options.angle === "number" ? options.angle : 0;
+
+    // PS exposes a single 'rotateEventEnum' that handles 90 CW/CCW, 180,
+    // arbitrary. We prefer the arbitrary form for max flexibility.
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "rotateEventEnum",
+                    angle: { _unit: "angleUnit", _value: angle },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const trimDocument = async (command) => {
+    let options = command.options;
+    // 'transparency' | 'topLeftPixel' | 'bottomRightPixel'
+    let trimBasedOn = options.trimBasedOn || "transparency";
+    let trimTop = options.top !== false;
+    let trimBottom = options.bottom !== false;
+    let trimLeft = options.left !== false;
+    let trimRight = options.right !== false;
+
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "trim",
+                    bottom: trimBottom,
+                    left: trimLeft,
+                    right: trimRight,
+                    top: trimTop,
+                    trimBasedOn: { _enum: "trimBasedOn", _value: trimBasedOn },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const undoCommand = async (command) => {
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "undo" }], {});
+    });
+};
+
+const redoCommand = async (command) => {
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "redo" }], {});
+    });
+};
+
+const pasteInto = async (command) => {
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "pasteInto" }], {});
+    });
+};
+
+const pasteOutside = async (command) => {
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "pasteOutside" }], {});
+    });
+};
+
 const commandHandlers = {
     generativeFill,
     executeBatchPlayCommand,
@@ -664,6 +796,14 @@ const commandHandlers = {
     closeDocument,
     createArtboard,
     addNewGuideLayout,
+    resizeImage,
+    resizeCanvas,
+    rotateCanvas,
+    trimDocument,
+    undoCommand,
+    redoCommand,
+    pasteInto,
+    pasteOutside,
 };
 
 module.exports = {

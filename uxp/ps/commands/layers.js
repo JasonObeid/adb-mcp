@@ -1106,6 +1106,191 @@ const spotHealArea = async (command) => {
     });
 };
 
+const ungroupLayers = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`ungroupLayers : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "ungroupLayersEvent",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const mergeVisibleLayers = async (command) => {
+    let options = command.options;
+    let duplicate = options.duplicate === true;
+
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "mergeVisible",
+                    duplicate: duplicate,
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const setLayerStyleEnabled = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let enabled = options.enabled !== false;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`setLayerStyleEnabled : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        // PS uses the same `set` shape for both Show All Effects and Hide
+        // All Effects — toggling `enabled` on the layerEffects object.
+        await action.batchPlay(
+            [
+                {
+                    _obj: "set",
+                    _target: [
+                        { _property: "layerEffects", _ref: "property" },
+                        { _enum: "ordinal", _ref: "layer", _value: "targetEnum" },
+                    ],
+                    to: { _obj: "layerEffects", enabled: enabled },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const setLayerMaskEnabled = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let enabled = options.enabled !== false;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`setLayerMaskEnabled : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: enabled ? "enable" : "disable",
+                    _target: [
+                        { _enum: "channel", _ref: "channel", _value: "mask" },
+                    ],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const applyLayerMask = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`applyLayerMask : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        // Apply Layer Mask: PS rasterizes the mask into the layer pixels
+        // and removes the mask channel.
+        await action.batchPlay(
+            [
+                {
+                    _obj: "delete",
+                    _target: [
+                        { _enum: "channel", _ref: "channel", _value: "mask" },
+                    ],
+                    apply: true,
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const linkLayers = async (command) => {
+    let options = command.options;
+    let layerIds = options.layerIds || [];
+    if (layerIds.length < 2) {
+        throw new Error(`linkLayers : need at least 2 layerIds, got ${layerIds.length}`);
+    }
+
+    let layers = layerIds.map((id) => {
+        let layer = findLayer(id);
+        if (!layer) {
+            throw new Error(`linkLayers : Could not find layerId : ${id}`);
+        }
+        return layer;
+    });
+
+    await execute(async () => {
+        // Select all the target layers then link them.
+        app.activeDocument.activeLayers.forEach((l) => (l.selected = false));
+        layers.forEach((l) => (l.selected = true));
+        await action.batchPlay(
+            [
+                {
+                    _obj: "linkSelectedLayers",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const unlinkLayers = async (command) => {
+    let options = command.options;
+    let layerIds = options.layerIds || [];
+    if (layerIds.length === 0) {
+        throw new Error(`unlinkLayers : empty layerIds`);
+    }
+
+    let layers = layerIds.map((id) => {
+        let layer = findLayer(id);
+        if (!layer) {
+            throw new Error(`unlinkLayers : Could not find layerId : ${id}`);
+        }
+        return layer;
+    });
+
+    await execute(async () => {
+        app.activeDocument.activeLayers.forEach((l) => (l.selected = false));
+        layers.forEach((l) => (l.selected = true));
+        await action.batchPlay(
+            [
+                {
+                    _obj: "unlinkSelectedLayers",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
 const commandHandlers = {
     renameLayers,
     getLayerImage,
@@ -1136,6 +1321,13 @@ const commandHandlers = {
     mergeSelectedLayers,
     spotHealArea,
     applyTransform,
+    ungroupLayers,
+    mergeVisibleLayers,
+    setLayerStyleEnabled,
+    setLayerMaskEnabled,
+    applyLayerMask,
+    linkLayers,
+    unlinkLayers,
 };
 
 module.exports = {

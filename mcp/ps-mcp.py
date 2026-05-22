@@ -293,55 +293,20 @@ def get_document_image():
 
 @mcp.tool()
 def save_document_image_as_png(file_path: str):
-    """
-    Capture the Photoshop document and save as PNG file
-    
+    """Captures the active Photoshop document as a flat PNG.
+
     Args:
-        file_path: Where to save the PNG file
-        
-    Returns:
-        dict: Status and file info
+        file_path: Absolute destination path for the PNG.
     """
-    command = createCommand("getDocumentImage", {})
-    response = sendCommand(command)
-    
-    if response.get('format') == 'raw' and 'rawDataBase64' in response:
-        try:
-            # Decode raw data
-            raw_bytes = base64.b64decode(response['rawDataBase64'])
-            
-            # Extract metadata
-            width = response['width']
-            height = response['height']
-            components = response['components']
-            
-            # Convert to numpy array and reshape
-            pixel_array = np.frombuffer(raw_bytes, dtype=np.uint8)
-            image_array = pixel_array.reshape((height, width, components))
-            
-            # Create and save PNG
-            mode = 'RGBA' if components == 4 else 'RGB'
-            image = Image.fromarray(image_array, mode)
-            image.save(file_path, 'PNG')
-            
-            return {
-                'status': 'success',
-                'file_path': file_path,
-                'width': width,
-                'height': height,
-                'size_bytes': os.path.getsize(file_path)
-            }
-            
-        except Exception as e:
-            return {
-                'status': 'error',
-                'error': str(e)
-            }
-    else:
-        return {
-            'status': 'error',
-            'error': 'No raw image data received'
-        }
+    # The earlier implementation called `getDocumentImage` and expected a
+    # raw RGBA + base64 response shape that the UXP handler never emitted
+    # (it returns a JPEG MCP Image object). Delegate to `saveDocumentAs`
+    # in PNG mode instead — proven to work by `export_layers_as_png`.
+    command = createCommand("saveDocumentAs", {
+        "filePath": file_path,
+        "fileType": "PNG",
+    })
+    return sendCommand(command)
 
 @mcp.tool()
 def get_layers() -> list:
@@ -1139,15 +1104,9 @@ def invert_selection():
 
 @mcp.tool()
 def clear_selection():
-    
     """Clears / deselects the current selection"""
 
-    command = createCommand("selectRectangle", {
-        "feather":0,
-        "antiAlias":True,
-        "bounds":{"top": 0, "left": 0, "bottom": 0, "right": 0}
-    })
-
+    command = createCommand("clearSelection", {})
     return sendCommand(command)
 
 @mcp.tool()

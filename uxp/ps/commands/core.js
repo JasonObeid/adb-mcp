@@ -462,21 +462,27 @@ const saveDocumentAs = async (command) => {
 };
 
 const setActiveDocument = async (command) => {
-
     let options = command.options;
     let documentId = options.documentId;
-    let docs = listOpenDocuments();
 
-    for (let doc of docs) {
+    // `listOpenDocuments()` returns plain objects (see generateDocumentInfo),
+    // but `app.activeDocument` requires a real Document instance. Iterate
+    // `app.documents` to grab the live instance.
+    let target = null;
+    for (let doc of app.documents) {
         if (doc.id === documentId) {
-            await execute(async () => {
-                app.activeDocument = doc;
-            });
-
-            return
+            target = doc;
+            break;
         }
     }
-}
+    if (!target) {
+        throw new Error(`setActiveDocument : Could not find documentId : ${documentId}`);
+    }
+
+    await execute(async () => {
+        app.activeDocument = target;
+    });
+};
 
 const getDocuments = async (command) => {
     return listOpenDocuments()
@@ -500,6 +506,11 @@ const createDocument = async (command) => {
     await execute(async () => {
         await app.createDocument({
             typename: "DocumentCreateOptions",
+            // The wrapper exposes `document_name` but we previously
+            // dropped it on the floor here — the doc would show in PS
+            // as "Untitled-1" regardless. Pass it through; PS auto-falls
+            // back to its Untitled-N counter when `name` is missing.
+            name: options.name,
             width: options.width,
             height: options.height,
             resolution: options.resolution,
@@ -525,13 +536,16 @@ const closeDocument = async (command) => {
         "SAVE_CHANGES": constants.SaveOptions.SAVECHANGES,
         "PROMPT_TO_SAVE_CHANGES": constants.SaveOptions.PROMPTTOSAVECHANGES,
     };
-    let saveOpt = saveOptions[saveOption];
-    if (!saveOpt) {
+    // PS constants can be falsy numbers (e.g. enum value 0) — use an
+    // explicit `undefined` check instead of `!saveOpt`, which mis-rejects
+    // a valid 0-value constant as "unknown".
+    if (!(saveOption in saveOptions)) {
         throw new Error(
             `closeDocument : Unknown saveChanges value : ${saveOption}. ` +
             `Use DO_NOT_SAVE_CHANGES | SAVE_CHANGES | PROMPT_TO_SAVE_CHANGES.`
         );
     }
+    let saveOpt = saveOptions[saveOption];
 
     // Default to the active document when no id is supplied.
     let target = null;
@@ -752,15 +766,39 @@ const trimDocument = async (command) => {
     });
 };
 
+// `{ _obj: 'undo' }` is a no-op in current UXP — the BatchPlay descriptor
+// is accepted but doesn't rewind history. Navigate the history state
+// explicitly instead, which is the standard PS scripting form for
+// programmatic undo/redo.
 const undoCommand = async (command) => {
     await execute(async () => {
-        await action.batchPlay([{ _obj: "undo" }], {});
+        await action.batchPlay(
+            [
+                {
+                    _obj: "select",
+                    _target: [
+                        { _enum: "ordinal", _ref: "historyState", _value: "previous" },
+                    ],
+                },
+            ],
+            {},
+        );
     });
 };
 
 const redoCommand = async (command) => {
     await execute(async () => {
-        await action.batchPlay([{ _obj: "redo" }], {});
+        await action.batchPlay(
+            [
+                {
+                    _obj: "select",
+                    _target: [
+                        { _enum: "ordinal", _ref: "historyState", _value: "next" },
+                    ],
+                },
+            ],
+            {},
+        );
     });
 };
 

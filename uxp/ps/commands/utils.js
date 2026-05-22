@@ -105,10 +105,21 @@ const getNewDocumentMode = (value) => {
 };
 
 const getConstantValue = (c, v, n) => {
-    let out = c[v.toUpperCase()];
+    // UXP `constants.*` keys are uppercase with no separators
+    // (e.g. `MIDDLECENTER`). Accept callers passing either the bare
+    // upper-case form OR the snake_case / camelCase variants by
+    // normalising to upper-case-no-separators before the lookup.
+    let normalised = String(v).toUpperCase().replace(/[_\s-]/g, "");
+    let out = c[normalised];
 
-    if (!out) {
-        throw new Error(`getConstantValue : Unknown constant value :${c} ${v}`);
+    if (out === undefined) {
+        // Use the constant-group name in the error rather than the raw
+        // object so the message is debuggable (the previous form printed
+        // "[object Object]" for `c`).
+        throw new Error(
+            `getConstantValue : Unknown ${n || "constant"} value : ${v}. ` +
+            `Allowed (case-insensitive): ${Object.keys(c).join(" | ")}`
+        );
     }
 
     return out;

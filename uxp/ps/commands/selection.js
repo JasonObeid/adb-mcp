@@ -9,12 +9,23 @@ const {
 const {hasActiveSelection} = require("./utils")
 
 const clearSelection = async () => {
-    await app.activeDocument.selection.selectRectangle(
-        { top: 0, left: 0, bottom: 0, right: 0 },
-        constants.SelectionType.REPLACE,
-        0,
-        true
-    );
+    // The earlier shape called `selection.selectRectangle(...)` with
+    // empty bounds — which (a) the modern UXP API rejects with a "Could
+    // not find layerId" error path, and (b) leaves a degenerate 1px
+    // selection rather than a true deselect. The standard PS deselect
+    // descriptor is the same shape menu Edit > Deselect emits.
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "set",
+                    _target: [{ _property: "selection", _ref: "channel" }],
+                    to: { _enum: "ordinal", _value: "none" },
+                },
+            ],
+            {},
+        );
+    });
 };
 
 const createMaskFromSelection = async (command) => {

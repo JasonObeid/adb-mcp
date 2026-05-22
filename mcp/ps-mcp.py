@@ -1795,6 +1795,255 @@ def apply_transform(
 
 
 @mcp.tool()
+def add_curves_adjustment_layer(
+    layer_id: int,
+    curve_points: list = [
+        {"horizontal": 0, "vertical": 0},
+        {"horizontal": 255, "vertical": 255},
+    ],
+    channel: str = "composite",
+):
+    """Adds a Curves adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        curve_points (list): Control points as dicts of
+            {"horizontal": x, "vertical": y} (both 0-255). The first and
+            last points anchor the curve at input 0 and 255. Default is
+            the identity curve.
+        channel (str): "composite" (RGB master), "red", "green", or "blue".
+    """
+
+    command = createCommand("addCurvesAdjustmentLayer", {
+        "layerId": layer_id,
+        "curvePoints": curve_points,
+        "channel": channel,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_levels_adjustment_layer(
+    layer_id: int,
+    input_low: int = 0,
+    input_high: int = 255,
+    gamma: float = 1.0,
+    output_low: int = 0,
+    output_high: int = 255,
+    channel: str = "composite",
+):
+    """Adds a Levels adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        input_low (int): Input black point (0-253).
+        input_high (int): Input white point (2-255).
+        gamma (float): Midtone gamma (0.10-9.99, default 1.0).
+        output_low (int): Output black point (0-255).
+        output_high (int): Output white point (0-255).
+        channel (str): "composite" | "red" | "green" | "blue".
+    """
+
+    command = createCommand("addLevelsAdjustmentLayer", {
+        "layerId": layer_id,
+        "inputLow": input_low,
+        "inputHigh": input_high,
+        "gamma": gamma,
+        "outputLow": output_low,
+        "outputHigh": output_high,
+        "channel": channel,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_hue_saturation_adjustment_layer(
+    layer_id: int,
+    master_hue: int = 0,
+    master_saturation: int = 0,
+    master_lightness: int = 0,
+    colorize: bool = False,
+):
+    """Adds a Hue/Saturation adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        master_hue (int): Master hue shift in degrees (-180..180).
+        master_saturation (int): Master saturation shift (-100..100).
+        master_lightness (int): Master lightness shift (-100..100).
+        colorize (bool): When True, applies the hue/sat as a colorize tint
+            instead of a shift. Defaults to False.
+    """
+
+    command = createCommand("addHueSaturationAdjustmentLayer", {
+        "layerId": layer_id,
+        "masterHue": master_hue,
+        "masterSaturation": master_saturation,
+        "masterLightness": master_lightness,
+        "colorize": colorize,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_exposure_adjustment_layer(
+    layer_id: int,
+    exposure: float = 0.0,
+    offset: float = 0.0,
+    gamma: float = 1.0,
+):
+    """Adds an Exposure adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        exposure (float): Exposure in stops (-20..20). Positive brightens.
+        offset (float): Black-point offset (-0.5..0.5).
+        gamma (float): Gamma correction (0.01..9.99, default 1.0).
+    """
+
+    command = createCommand("addExposureAdjustmentLayer", {
+        "layerId": layer_id,
+        "exposure": exposure,
+        "offset": offset,
+        "gamma": gamma,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_photo_filter_adjustment_layer(
+    layer_id: int,
+    preset: str = None,
+    color: dict = None,
+    density: int = 25,
+    preserve_luminosity: bool = True,
+):
+    """Adds a Photo Filter adjustment layer above the layer with the specified ID.
+
+    Provide either `preset` (a named filter) or `color` (a custom RGB).
+    When both are omitted, defaults to the Warming Filter (85).
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        preset (str, optional): Named filter, e.g. "warmingFilter85",
+            "coolingFilter80", "warmingFilter81", "coolingFilter82".
+        color (dict, optional): Custom RGB color
+            {"red": int, "green": int, "blue": int} (each 0-255).
+        density (int): Filter density percentage (1-100). Default 25.
+        preserve_luminosity (bool): Preserve overall luminance. Default True.
+    """
+
+    options = {
+        "layerId": layer_id,
+        "density": density,
+        "preserveLuminosity": preserve_luminosity,
+    }
+    if preset is not None:
+        options["preset"] = preset
+    if color is not None:
+        options["color"] = color
+
+    command = createCommand("addPhotoFilterAdjustmentLayer", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_channel_mixer_adjustment_layer(
+    layer_id: int,
+    mixes: dict = {},
+    monochrome: bool = False,
+):
+    """Adds a Channel Mixer adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        mixes (dict): Per-output-channel mixing. Keys are output channels
+            ("red", "green", "blue") and each value is a dict with
+            "red", "green", "blue", "constant" as percentages (-200..200).
+            Example: {"red": {"red": 100, "green": 0, "blue": 0, "constant": 0}}.
+            Omitted channels keep their default identity mix.
+        monochrome (bool): When True, all output channels share one mix
+            (true monochrome output). Default False.
+    """
+
+    command = createCommand("addChannelMixerAdjustmentLayer", {
+        "layerId": layer_id,
+        "mixes": mixes,
+        "monochrome": monochrome,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_gradient_map_adjustment_layer(
+    layer_id: int,
+    color_stops: list = None,
+    reverse: bool = False,
+    dither: bool = False,
+):
+    """Adds a Gradient Map adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        color_stops (list): Gradient stops as dicts of
+            {"location": 0-100, "midpoint": 0-100, "color": {red, green, blue}}.
+            Default is a black-to-white linear gradient.
+        reverse (bool): Reverse the gradient direction. Default False.
+        dither (bool): Apply dithering to reduce banding. Default False.
+    """
+
+    if color_stops is None:
+        color_stops = [
+            {"location": 0, "midpoint": 50, "color": {"red": 0, "green": 0, "blue": 0}},
+            {"location": 100, "midpoint": 50, "color": {"red": 255, "green": 255, "blue": 255}},
+        ]
+
+    command = createCommand("addGradientMapAdjustmentLayer", {
+        "layerId": layer_id,
+        "colorStops": color_stops,
+        "reverse": reverse,
+        "dither": dither,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def desaturate_layer(layer_id: int):
+    """Desaturates the layer with the specified ID (Image > Adjustments > Desaturate).
+
+    Equivalent to Cmd+Shift+U. Converts all colors to grayscale by zeroing
+    saturation while preserving luminance. Destructive on raster layers.
+
+    Args:
+        layer_id (int): The layer to desaturate.
+    """
+
+    command = createCommand("desaturateLayer", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def invert_layer(layer_id: int):
+    """Inverts the colors of the layer with the specified ID (Image > Adjustments > Invert).
+
+    Equivalent to Cmd+I. Each pixel becomes its color-wheel complement
+    (255 - value per channel). Destructive on raster layers.
+
+    Args:
+        layer_id (int): The layer to invert.
+    """
+
+    command = createCommand("invertLayer", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
 def select_object(layer_id: int, bounds: dict):
     """Runs Photoshop's Object Selection AI within a rectangular hint area.
 

@@ -448,6 +448,119 @@ const selectAll = async (command) => {
     });
 };
 
+const featherSelection = async (command) => {
+    let options = command.options;
+    let radius = typeof options.radius === "number" ? options.radius : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("featherSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "feather",
+                    radius: { _unit: "pixelsUnit", _value: radius },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const expandSelection = async (command) => {
+    let options = command.options;
+    let amount = typeof options.amount === "number" ? options.amount : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("expandSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "expand",
+                    by: { _unit: "pixelsUnit", _value: amount },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const contractSelection = async (command) => {
+    let options = command.options;
+    let amount = typeof options.amount === "number" ? options.amount : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("contractSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "contract",
+                    by: { _unit: "pixelsUnit", _value: amount },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const smoothSelection = async (command) => {
+    let options = command.options;
+    let radius = typeof options.radius === "number" ? options.radius : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("smoothSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "smooth",
+                    radius: { _unit: "pixelsUnit", _value: radius },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const borderSelection = async (command) => {
+    let options = command.options;
+    let width = typeof options.width === "number" ? options.width : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("borderSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "border",
+                    width: { _unit: "pixelsUnit", _value: width },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const growSelection = async (command) => {
+    if (!hasActiveSelection()) {
+        throw new Error("growSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "grow" }], {});
+    });
+};
+
+const similarSelection = async (command) => {
+    if (!hasActiveSelection()) {
+        throw new Error("similarSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "similar" }], {});
+    });
+};
+
 const commandHandlers = {
     clearSelection,
     createMaskFromSelection,
@@ -465,6 +578,13 @@ const commandHandlers = {
     selectRectangle,
     invertSelection,
     selectAll,
+    featherSelection,
+    expandSelection,
+    contractSelection,
+    smoothSelection,
+    borderSelection,
+    growSelection,
+    similarSelection,
 };
 
 module.exports = {

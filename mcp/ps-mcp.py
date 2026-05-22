@@ -1967,6 +1967,98 @@ def select_all():
 
 
 @mcp.tool()
+def feather_selection(radius: float = 1):
+    """Softens the current selection's edges (Select > Modify > Feather...).
+
+    Requires an active selection.
+
+    Args:
+        radius (float): Feather radius in pixels (0.1..1000). Default 1.
+    """
+
+    command = createCommand("featherSelection", { "radius": radius })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def expand_selection(amount: int = 1):
+    """Grows the current selection outward by the specified pixels (Select > Modify > Expand...).
+
+    Requires an active selection.
+
+    Args:
+        amount (int): Pixels to expand by (1..500). Default 1.
+    """
+
+    command = createCommand("expandSelection", { "amount": amount })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def contract_selection(amount: int = 1):
+    """Shrinks the current selection inward by the specified pixels (Select > Modify > Contract...).
+
+    Requires an active selection.
+
+    Args:
+        amount (int): Pixels to contract by (1..500). Default 1.
+    """
+
+    command = createCommand("contractSelection", { "amount": amount })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def smooth_selection(radius: int = 1):
+    """Smooths the current selection's corners (Select > Modify > Smooth...).
+
+    Requires an active selection.
+
+    Args:
+        radius (int): Smoothing radius in pixels (1..500). Default 1.
+    """
+
+    command = createCommand("smoothSelection", { "radius": radius })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def border_selection(width: int = 1):
+    """Replaces the current selection with a ring around its edges (Select > Modify > Border...).
+
+    Requires an active selection.
+
+    Args:
+        width (int): Border width in pixels (1..500). Default 1.
+    """
+
+    command = createCommand("borderSelection", { "width": width })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def grow_selection():
+    """Extends the selection to include adjacent pixels with similar color (Select > Grow).
+
+    Requires an active selection. Uses the Magic Wand's current tolerance.
+    """
+
+    command = createCommand("growSelection", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def similar_selection():
+    """Selects all pixels with color similar to the current selection (Select > Similar).
+
+    Requires an active selection. Uses the Magic Wand's current tolerance.
+    """
+
+    command = createCommand("similarSelection", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
 def ungroup_layers(layer_id: int):
     """Ungroups the layer group with the specified ID (Layer > Ungroup Layers).
 

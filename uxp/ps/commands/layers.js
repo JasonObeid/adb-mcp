@@ -1006,6 +1006,55 @@ const mergeSelectedLayers = async (command) => {
     });
 };
 
+const applyTransform = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `applyTransform : Could not find layerId : ${layerId}`
+        );
+    }
+
+    let scaleXPercent = typeof options.scaleXPercent === "number" ? options.scaleXPercent : 100;
+    let scaleYPercent = typeof options.scaleYPercent === "number" ? options.scaleYPercent : 100;
+    let angle = typeof options.angle === "number" ? options.angle : 0;
+    let translateXPx = typeof options.translateXPx === "number" ? options.translateXPx : 0;
+    let translateYPx = typeof options.translateYPx === "number" ? options.translateYPx : 0;
+    let anchor = typeof options.anchor === "string" ? options.anchor : "QCSAverage";
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            {
+                _obj: "transform",
+                _target: [
+                    {
+                        _enum: "ordinal",
+                        _ref: "layer",
+                        _value: "targetEnum",
+                    },
+                ],
+                freeTransformCenterState: { _enum: "quadCenterState", _value: anchor },
+                offset: {
+                    _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: translateXPx },
+                    vertical: { _unit: "pixelsUnit", _value: translateYPx },
+                },
+                width: { _unit: "percentUnit", _value: scaleXPercent },
+                height: { _unit: "percentUnit", _value: scaleYPercent },
+                angle: { _unit: "angleUnit", _value: angle },
+                interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const spotHealArea = async (command) => {
     let options = command.options;
     let layerId = options.layerId;
@@ -1086,6 +1135,7 @@ const commandHandlers = {
     convertToSmartObject,
     mergeSelectedLayers,
     spotHealArea,
+    applyTransform,
 };
 
 module.exports = {

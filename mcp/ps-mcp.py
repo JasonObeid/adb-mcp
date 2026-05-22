@@ -1753,6 +1753,48 @@ def spot_heal_area(layer_id: int, bounds: dict):
 
 
 @mcp.tool()
+def apply_transform(
+    layer_id: int,
+    scale_x_percent: float = 100,
+    scale_y_percent: float = 100,
+    angle: float = 0,
+    translate_x_px: float = 0,
+    translate_y_px: float = 0,
+    anchor: str = "QCSAverage",
+):
+    """Applies a Free-Transform-equivalent operation to the layer in one call.
+
+    Mirrors Photoshop's "Edit > Free Transform" descriptor: a single
+    transform that combines scale, rotation, and translation around a
+    single anchor point. The numerical values typically come from a
+    captured demonstrator's transform descriptor, so omitted args map to
+    the identity transform on that axis.
+
+    Args:
+        layer_id (int): The ID of the layer to transform.
+        scale_x_percent (float): Horizontal scale as a percentage (100 = no change).
+        scale_y_percent (float): Vertical scale as a percentage (100 = no change).
+        angle (float): Rotation in degrees (positive = clockwise).
+        translate_x_px (float): Horizontal translation in pixels.
+        translate_y_px (float): Vertical translation in pixels.
+        anchor (str): Photoshop anchor enum — typically "QCSAverage" (geometric
+            centre), "QCSIndependent", or one of the corner/edge anchors.
+    """
+
+    command = createCommand("applyTransform", {
+        "layerId": layer_id,
+        "scaleXPercent": scale_x_percent,
+        "scaleYPercent": scale_y_percent,
+        "angle": angle,
+        "translateXPx": translate_x_px,
+        "translateYPx": translate_y_px,
+        "anchor": anchor,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
 def select_object(layer_id: int, bounds: dict):
     """Runs Photoshop's Object Selection AI within a rectangular hint area.
 

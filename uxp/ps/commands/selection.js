@@ -594,7 +594,43 @@ const applyContentAwareFill = async (command) => {
     });
 };
 
+// Select > Color Range — selects pixels near `color` within `fuzziness`
+// tolerance. Document-level (no layer target). minimum === maximum samples a
+// single color; Photoshop grows the selection outward by fuzziness.
+// NOTE: verify the colorRange descriptor against a live Photoshop — the
+// recorded form for "Sampled Colors" can vary by version.
+const selectColorRange = async (command) => {
+    let options = command.options;
+    let color = options.color;
+    let fuzziness = options.fuzziness;
+
+    return await execute(async () => {
+        let commands = [
+            {
+                _obj: "colorRange",
+                colorModel: 0,
+                fuzziness: fuzziness,
+                minimum: {
+                    _obj: "RGBColor",
+                    blue: color.blue,
+                    grain: color.green,
+                    red: color.red,
+                },
+                maximum: {
+                    _obj: "RGBColor",
+                    blue: color.blue,
+                    grain: color.green,
+                    red: color.red,
+                },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
+    selectColorRange,
     clearSelection,
     createMaskFromSelection,
     selectSubject,

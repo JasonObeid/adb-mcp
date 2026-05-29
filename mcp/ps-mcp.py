@@ -2281,6 +2281,36 @@ def add_solid_color_fill_layer(layer_id: int, color: dict):
 
 
 @mcp.tool()
+def add_color_overlay_layer_style(
+    layer_id: int,
+    color: dict,
+    blend_mode: str = "NORMAL",
+    opacity: int = 100,
+    ):
+    """Adds a Color Overlay layer style to the layer with the specified ID.
+
+    Unlike a Solid Color fill layer, this is a non-destructive layer effect
+    (Layer > Layer Style > Color Overlay) attached to the layer itself.
+
+    Args:
+        layer_id (int): The ID for the layer to add the color overlay to.
+        color (dict): The overlay color as {"red": int, "green": int, "blue": int}
+            (each 0..255).
+        blend_mode (str): The blend mode for the overlay.
+        opacity (int): The opacity of the overlay (0 to 100).
+    """
+
+    command = createCommand("addColorOverlayLayerStyle", {
+        "layerId": layer_id,
+        "color": color,
+        "blendMode": blend_mode,
+        "opacity": opacity,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
 def add_selective_color_adjustment_layer(
     layer_id: int,
     corrections: dict,
@@ -2684,6 +2714,28 @@ def select_object(layer_id: int, bounds: dict):
     command = createCommand("selectObject", {
         "layerId": layer_id,
         "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_color_range(color: dict, fuzziness: int = 40):
+    """Selects pixels within a color range (Select > Color Range).
+
+    Equivalent to sampling a color with the eyedropper and dragging the
+    Fuzziness slider: PS selects pixels close to the sampled color across the
+    whole document. Higher fuzziness selects a broader range.
+
+    Args:
+        color (dict): The color to sample, as
+            {"red": int, "green": int, "blue": int} (each 0..255).
+        fuzziness (int): Tolerance around the sampled color (0..200).
+    """
+
+    command = createCommand("selectColorRange", {
+        "color": color,
+        "fuzziness": fuzziness,
     })
 
     return sendCommand(command)

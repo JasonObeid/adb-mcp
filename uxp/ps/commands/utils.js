@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-const { app, constants, core } = require("photoshop");
+const { app, constants, core, action } = require("photoshop");
 const fs = require("uxp").storage.localFileSystem;
 const openfs = require('fs')
 
@@ -105,10 +105,21 @@ const getNewDocumentMode = (value) => {
 };
 
 const getConstantValue = (c, v, n) => {
-    let out = c[v.toUpperCase()];
+    // UXP `constants.*` keys are uppercase with no separators
+    // (e.g. `MIDDLECENTER`). Accept callers passing either the bare
+    // upper-case form OR the snake_case / camelCase variants by
+    // normalising to upper-case-no-separators before the lookup.
+    let normalised = String(v).toUpperCase().replace(/[_\s-]/g, "");
+    let out = c[normalised];
 
-    if (!out) {
-        throw new Error(`getConstantValue : Unknown constant value :${c} ${v}`);
+    if (out === undefined) {
+        // Use the constant-group name in the error rather than the raw
+        // object so the message is debuggable (the previous form printed
+        // "[object Object]" for `c`).
+        throw new Error(
+            `getConstantValue : Unknown ${n || "constant"} value : ${v}. ` +
+            `Allowed (case-insensitive): ${Object.keys(c).join(" | ")}`
+        );
     }
 
     return out;
@@ -183,32 +194,66 @@ const findLayerByName = (name, layers) => {
 
 const _saveDocumentAs = async (filePath, fileType) => {
 
-    let url = await createFile(filePath)
+    // The DOM `app.activeDocument.saveAs.{psd,png,jpg}()` API pops a
+    // native "Save As" dialog on PS 2026 for documents that have never
+    // been saved (asCopy:true + no doc path). Drive `save` via BatchPlay
+    // with a session-token path and `dialogOptions: "dontDisplay"` so the
+    // operation is fully headless.
 
-    let saveFile = await fs.getEntryWithUrl(url);
+    await createFile(filePath);
+    const pathToken = await tokenify(filePath);
 
     return await execute(async () => {
 
-        fileType = fileType.toUpperCase()
-        if (fileType == "JPG") {
-            await app.activeDocument.saveAs.jpg(saveFile, {
-                quality:9
-            }, true)
-        } else if (fileType == "PNG") {
-            await app.activeDocument.saveAs.png(saveFile, {
-            }, true)
+        fileType = fileType.toUpperCase();
+
+        let asDescriptor;
+        if (fileType === "JPG" || fileType === "JPEG") {
+            asDescriptor = {
+                _obj: "JPEG",
+                extendedQuality: 9,
+                matteColor: { _enum: "matteColor", _value: "none" },
+            };
+        } else if (fileType === "PNG") {
+            asDescriptor = {
+                _obj: "PNGFormat",
+                method: { _enum: "PNGMethod", _value: "quick" },
+                compression: 6,
+                interlace: false,
+                embedIccProfileLastState: { _enum: "embedOff", _value: "embedOff" },
+                PNG8: false,
+            };
+        } else if (fileType === "PSB") {
+            // PSB needs `largeDocumentFormat`. Passing a `.psb` path with
+            // the PSD descriptor (`photoshop35Format`) triggers a confirm
+            // dialog that `dialogOptions: dontDisplay` does not suppress.
+            asDescriptor = {
+                _obj: "largeDocumentFormat",
+                maximizeCompatibility: true,
+            };
         } else {
-            await app.activeDocument.saveAs.psd(saveFile, {
-                alphaChannels:true,
-                annotations:true,
-                embedColorProfile:true,
-                layers:true,
-                maximizeCompatibility:true,
-                spotColor:true,
-            }, true)
+            asDescriptor = {
+                _obj: "photoshop35Format",
+                maximizeCompatibility: true,
+            };
         }
 
-        return {savedFilePath:saveFile.nativePath}
+        await action.batchPlay(
+            [
+                {
+                    _obj: "save",
+                    in: { _kind: "local", _path: pathToken },
+                    as: asDescriptor,
+                    copy: true,
+                    lowerCase: true,
+                    documentID: app.activeDocument.id,
+                    _options: { dialogOptions: "dontDisplay" },
+                },
+            ],
+            { dialogOptions: "dontDisplay" },
+        );
+
+        return { savedFilePath: filePath };
     });
 };
 

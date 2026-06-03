@@ -293,55 +293,20 @@ def get_document_image():
 
 @mcp.tool()
 def save_document_image_as_png(file_path: str):
-    """
-    Capture the Photoshop document and save as PNG file
-    
+    """Captures the active Photoshop document as a flat PNG.
+
     Args:
-        file_path: Where to save the PNG file
-        
-    Returns:
-        dict: Status and file info
+        file_path: Absolute destination path for the PNG.
     """
-    command = createCommand("getDocumentImage", {})
-    response = sendCommand(command)
-    
-    if response.get('format') == 'raw' and 'rawDataBase64' in response:
-        try:
-            # Decode raw data
-            raw_bytes = base64.b64decode(response['rawDataBase64'])
-            
-            # Extract metadata
-            width = response['width']
-            height = response['height']
-            components = response['components']
-            
-            # Convert to numpy array and reshape
-            pixel_array = np.frombuffer(raw_bytes, dtype=np.uint8)
-            image_array = pixel_array.reshape((height, width, components))
-            
-            # Create and save PNG
-            mode = 'RGBA' if components == 4 else 'RGB'
-            image = Image.fromarray(image_array, mode)
-            image.save(file_path, 'PNG')
-            
-            return {
-                'status': 'success',
-                'file_path': file_path,
-                'width': width,
-                'height': height,
-                'size_bytes': os.path.getsize(file_path)
-            }
-            
-        except Exception as e:
-            return {
-                'status': 'error',
-                'error': str(e)
-            }
-    else:
-        return {
-            'status': 'error',
-            'error': 'No raw image data received'
-        }
+    # The earlier implementation called `getDocumentImage` and expected a
+    # raw RGBA + base64 response shape that the UXP handler never emitted
+    # (it returns a JPEG MCP Image object). Delegate to `saveDocumentAs`
+    # in PNG mode instead — proven to work by `export_layers_as_png`.
+    command = createCommand("saveDocumentAs", {
+        "filePath": file_path,
+        "fileType": "PNG",
+    })
+    return sendCommand(command)
 
 @mcp.tool()
 def get_layers() -> list:
@@ -547,8 +512,9 @@ def generate_image(
 ):
     """Uses Adobe Firefly Generative AI to generate an image on a new layer with the specified layer name.
 
-    If there is an active selection, it will use that region for the generation. Otherwise it will generate
-    on the entire layer.
+    The generation always fills the entire canvas — Firefly's `text_to_image`
+    workflow does not honour an active selection. Use `generative_fill` instead
+    if you need the output bounded by a selection.
 
     Args:
         layer_name (str): Name for the layer that will be created and contain the generated image
@@ -1139,15 +1105,9 @@ def invert_selection():
 
 @mcp.tool()
 def clear_selection():
-    
     """Clears / deselects the current selection"""
 
-    command = createCommand("selectRectangle", {
-        "feather":0,
-        "antiAlias":True,
-        "bounds":{"top": 0, "left": 0, "bottom": 0, "right": 0}
-    })
-
+    command = createCommand("clearSelection", {})
     return sendCommand(command)
 
 @mcp.tool()
@@ -1507,6 +1467,1275 @@ def apply_motion_blur(layer_id: int, angle: int = 0, distance: float = 30):
         "layerId":layer_id,
         "angle":angle,
         "distance":distance
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_camera_raw_filter(layer_id: int, settings: dict = {}):
+    """Applies the Adobe Camera Raw Filter to the layer with the specified ID.
+
+    Keys omitted from `settings` are left unchanged by Photoshop, so callers
+    only need to specify the adjustments they care about. Common keys
+    include: exposure, contrast, highlights, shadows, whites, blacks,
+    clarity, dehaze, vibrance, saturation, temperature, tint. Most accept
+    -100..100 except exposure (-5..5 stops) and temperature (-100..100 in
+    "as shot" mode, or absolute Kelvin in custom mode).
+
+    For non-destructive use, convert the target layer to a Smart Object
+    first via `convert_to_smart_object`.
+
+    Args:
+        layer_id (int): The ID of the layer to apply Camera Raw to.
+        settings (dict): Optional Camera Raw adjustments. Omitted keys are
+            left at their current values.
+    """
+
+    command = createCommand("applyCameraRawFilter", {
+        "layerId": layer_id,
+        "settings": settings,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_smart_sharpen(
+    layer_id: int,
+    amount: float = 100,
+    radius: float = 1.0,
+    noise_reduction: float = 10,
+    blur_type: str = "gaussianBlur",
+):
+    """Applies the Smart Sharpen filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The ID of the layer to sharpen.
+        amount (float): Sharpen amount as a percentage (0..500). Default 100.
+        radius (float): Sharpen radius in pixels (0.1..64). Default 1.0.
+        noise_reduction (float): Noise-reduction percentage (0..100). Default 10.
+        blur_type (str): Removal blur type — one of "gaussianBlur",
+            "lensBlur", or "motionBlur". Default "gaussianBlur".
+    """
+
+    command = createCommand("applySmartSharpen", {
+        "layerId": layer_id,
+        "amount": amount,
+        "radius": radius,
+        "noiseReduction": noise_reduction,
+        "blurType": blur_type,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_unsharp_mask(
+    layer_id: int,
+    amount: float = 50,
+    radius: float = 1.0,
+    threshold: int = 0,
+):
+    """Applies the Unsharp Mask filter to the layer with the specified ID.
+
+    Sharpens by amplifying contrast at edges. Equivalent to
+    Filter > Sharpen > Unsharp Mask...
+
+    Args:
+        layer_id (int): The layer to sharpen.
+        amount (float): Sharpen amount as a percentage (1..500). Default 50.
+        radius (float): Edge detection radius in pixels (0.1..1000). Default 1.0.
+        threshold (int): Minimum edge tonal difference (0..255). Default 0.
+    """
+
+    command = createCommand("applyUnsharpMask", {
+        "layerId": layer_id,
+        "amount": amount,
+        "radius": radius,
+        "threshold": threshold,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_sharpen_edges(layer_id: int):
+    """Applies the Sharpen Edges filter to the layer with the specified ID.
+
+    Auto-detects edges and sharpens them. Takes no parameters.
+    Equivalent to Filter > Sharpen > Sharpen Edges.
+
+    Args:
+        layer_id (int): The layer to sharpen.
+    """
+
+    command = createCommand("applySharpenEdges", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_high_pass(layer_id: int, radius: float = 10):
+    """Applies the High Pass filter to the layer with the specified ID.
+
+    Retains edge detail above the radius; everything else turns 50% gray.
+    Commonly paired with a Soft Light / Overlay blend mode to sharpen.
+
+    Args:
+        layer_id (int): The layer to filter.
+        radius (float): Edge detail radius in pixels (0.1..1000). Default 10.
+    """
+
+    command = createCommand("applyHighPass", {
+        "layerId": layer_id,
+        "radius": radius,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_add_noise(
+    layer_id: int,
+    amount: float = 12.5,
+    distribution: str = "gaussian",
+    monochromatic: bool = False,
+):
+    """Applies the Add Noise filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to add noise to.
+        amount (float): Noise amount as a percentage (0.1..400). Default 12.5.
+        distribution (str): "gaussian" or "uniform". Default "gaussian".
+        monochromatic (bool): When True, applies grayscale noise only.
+            Default False.
+    """
+
+    command = createCommand("applyAddNoise", {
+        "layerId": layer_id,
+        "amount": amount,
+        "distribution": distribution,
+        "monochromatic": monochromatic,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_reduce_noise(
+    layer_id: int,
+    strength: int = 5,
+    preserve_details: int = 50,
+    reduce_color_noise: int = 25,
+    sharpen_details: int = 25,
+    remove_jpeg_artifact: bool = False,
+):
+    """Applies the Reduce Noise filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to denoise.
+        strength (int): Overall noise reduction strength (0..10). Default 5.
+        preserve_details (int): Detail preservation percentage (0..100).
+            Default 50.
+        reduce_color_noise (int): Color-noise reduction percentage (0..100).
+            Default 25.
+        sharpen_details (int): Sharpening percentage (0..100). Default 25.
+        remove_jpeg_artifact (bool): Remove JPEG compression artifacts.
+            Default False.
+    """
+
+    command = createCommand("applyReduceNoise", {
+        "layerId": layer_id,
+        "strength": strength,
+        "preserveDetails": preserve_details,
+        "reduceColorNoise": reduce_color_noise,
+        "sharpenDetails": sharpen_details,
+        "removeJpegArtifact": remove_jpeg_artifact,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_median_filter(layer_id: int, radius: float = 2):
+    """Applies the Median filter to the layer with the specified ID.
+
+    Replaces each pixel with the median of its neighborhood — useful for
+    reducing noise and posterizing.
+
+    Args:
+        layer_id (int): The layer to filter.
+        radius (float): Neighborhood radius in pixels (1..100). Default 2.
+    """
+
+    command = createCommand("applyMedianFilter", {
+        "layerId": layer_id,
+        "radius": radius,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_lens_correction(
+    layer_id: int,
+    auto_scale: bool = True,
+    remove_geometric_distortion: bool = True,
+    remove_chromatic_aberration: bool = True,
+    remove_vignette: bool = False,
+):
+    """Applies the Lens Correction filter to the layer with the specified ID.
+
+    Uses Photoshop's auto profile against the embedded EXIF lens data.
+    Manual distortion / chromatic / vignette tuning is not yet exposed.
+
+    Args:
+        layer_id (int): The layer to correct.
+        auto_scale (bool): Auto-scale to fit the corrected image. Default True.
+        remove_geometric_distortion (bool): Correct barrel/pincushion
+            distortion. Default True.
+        remove_chromatic_aberration (bool): Correct red/cyan and blue/yellow
+            fringing. Default True.
+        remove_vignette (bool): Correct lens vignette. Default False.
+    """
+
+    command = createCommand("applyLensCorrection", {
+        "layerId": layer_id,
+        "autoScale": auto_scale,
+        "removeGeometricDistortion": remove_geometric_distortion,
+        "removeChromaticAberration": remove_chromatic_aberration,
+        "removeVignette": remove_vignette,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_oil_paint_filter(
+    layer_id: int,
+    stylization: float = 5,
+    cleanliness: float = 5,
+    scale: float = 1,
+    bristle_detail: float = 5,
+    lighting_direction: float = 0,
+    shine: float = 1,
+):
+    """Applies the Oil Paint filter to the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to stylize.
+        stylization (float): Brush stylization (0.1..10). Default 5.
+        cleanliness (float): Brush cleanliness (0..10). Default 5.
+        scale (float): Brush scale (0.1..10). Default 1.
+        bristle_detail (float): Bristle detail (0..10). Default 5.
+        lighting_direction (float): Lighting direction in degrees (-180..180).
+            Default 0.
+        shine (float): Lighting shine (0..10). Default 1.
+    """
+
+    command = createCommand("applyOilPaintFilter", {
+        "layerId": layer_id,
+        "stylization": stylization,
+        "cleanliness": cleanliness,
+        "scale": scale,
+        "bristleDetail": bristle_detail,
+        "lightingDirection": lighting_direction,
+        "shine": shine,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_clouds_filter(layer_id: int, difference: bool = False):
+    """Applies the Clouds filter (or Difference Clouds) to the layer.
+
+    Clouds generates fresh noise from the foreground/background colors;
+    Difference Clouds XORs new clouds with the existing pixels. Both take
+    no other parameters.
+
+    Args:
+        layer_id (int): The layer to render clouds onto.
+        difference (bool): When True, applies Difference Clouds instead of
+            Clouds. Default False.
+    """
+
+    command = createCommand("applyCloudsFilter", {
+        "layerId": layer_id,
+        "difference": difference,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def resize_image(
+    width: int = None,
+    height: int = None,
+    resolution: int = None,
+    constrain_proportions: bool = True,
+    scale_styles: bool = True,
+):
+    """Resizes the document's pixel dimensions (Image > Image Size...).
+
+    Pass any subset of width/height/resolution; omitted dimensions are
+    inferred from the others when constrain_proportions=True.
+
+    Args:
+        width (int, optional): New width in pixels.
+        height (int, optional): New height in pixels.
+        resolution (int, optional): New resolution in PPI.
+        constrain_proportions (bool): Preserve aspect ratio. Default True.
+        scale_styles (bool): Scale layer effects to match. Default True.
+    """
+
+    options = {
+        "constrainProportions": constrain_proportions,
+        "scaleStyles": scale_styles,
+    }
+    if width is not None:
+        options["width"] = width
+    if height is not None:
+        options["height"] = height
+    if resolution is not None:
+        options["resolution"] = resolution
+
+    command = createCommand("resizeImage", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def resize_canvas(
+    width: int = None,
+    height: int = None,
+    anchor: str = "middleCenter",
+    relative: bool = False,
+):
+    """Resizes the document canvas (Image > Canvas Size...).
+
+    Args:
+        width (int, optional): New canvas width in pixels.
+        height (int, optional): New canvas height in pixels.
+        anchor (str): One of the 9-position anchors — topLeft, topCenter,
+            topRight, middleLeft, middleCenter, middleRight, bottomLeft,
+            bottomCenter, bottomRight. Default "middleCenter".
+        relative (bool): When True, width/height are deltas instead of
+            absolute sizes. Default False.
+    """
+
+    options = {"anchor": anchor, "relative": relative}
+    if width is not None:
+        options["width"] = width
+    if height is not None:
+        options["height"] = height
+
+    command = createCommand("resizeCanvas", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def rotate_canvas(angle: float = 0):
+    """Rotates the entire document by an arbitrary angle (Image > Image Rotation > Arbitrary).
+
+    Positive angles rotate clockwise. Use 90 / -90 / 180 for the cardinal
+    rotations from the menu.
+
+    Args:
+        angle (float): Rotation angle in degrees (-180..180).
+    """
+
+    command = createCommand("rotateCanvas", { "angle": angle })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def trim_document(
+    trim_based_on: str = "transparency",
+    top: bool = True,
+    bottom: bool = True,
+    left: bool = True,
+    right: bool = True,
+):
+    """Trims uniform edges from the document (Image > Trim...).
+
+    Args:
+        trim_based_on (str): "transparency" | "topLeftPixel" |
+            "bottomRightPixel". Default "transparency".
+        top (bool): Trim the top edge. Default True.
+        bottom (bool): Trim the bottom edge. Default True.
+        left (bool): Trim the left edge. Default True.
+        right (bool): Trim the right edge. Default True.
+    """
+
+    command = createCommand("trimDocument", {
+        "trimBasedOn": trim_based_on,
+        "top": top,
+        "bottom": bottom,
+        "left": left,
+        "right": right,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def undo():
+    """Undoes the last action (Edit > Undo, Cmd+Z)."""
+
+    command = createCommand("undoCommand", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def redo():
+    """Redoes the last undone action (Edit > Redo, Cmd+Shift+Z)."""
+
+    command = createCommand("redoCommand", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def paste_into():
+    """Pastes clipboard contents inside the active selection (Edit > Paste Special > Paste Into).
+
+    The pasted content is placed on a new layer with a layer mask that
+    confines it to the current selection.
+    """
+
+    command = createCommand("pasteInto", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def paste_outside():
+    """Pastes clipboard contents outside the active selection (Edit > Paste Special > Paste Outside).
+
+    The pasted content is placed on a new layer with an inverted layer
+    mask that excludes the current selection.
+    """
+
+    command = createCommand("pasteOutside", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_all():
+    """Selects the entire canvas (Select > All, Cmd+A)."""
+
+    command = createCommand("selectAll", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def feather_selection(radius: float = 1):
+    """Softens the current selection's edges (Select > Modify > Feather...).
+
+    Requires an active selection.
+
+    Args:
+        radius (float): Feather radius in pixels (0.1..1000). Default 1.
+    """
+
+    command = createCommand("featherSelection", { "radius": radius })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def expand_selection(amount: int = 1):
+    """Grows the current selection outward by the specified pixels (Select > Modify > Expand...).
+
+    Requires an active selection.
+
+    Args:
+        amount (int): Pixels to expand by (1..500). Default 1.
+    """
+
+    command = createCommand("expandSelection", { "amount": amount })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def contract_selection(amount: int = 1):
+    """Shrinks the current selection inward by the specified pixels (Select > Modify > Contract...).
+
+    Requires an active selection.
+
+    Args:
+        amount (int): Pixels to contract by (1..500). Default 1.
+    """
+
+    command = createCommand("contractSelection", { "amount": amount })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def smooth_selection(radius: int = 1):
+    """Smooths the current selection's corners (Select > Modify > Smooth...).
+
+    Requires an active selection.
+
+    Args:
+        radius (int): Smoothing radius in pixels (1..500). Default 1.
+    """
+
+    command = createCommand("smoothSelection", { "radius": radius })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def border_selection(width: int = 1):
+    """Replaces the current selection with a ring around its edges (Select > Modify > Border...).
+
+    Requires an active selection.
+
+    Args:
+        width (int): Border width in pixels (1..500). Default 1.
+    """
+
+    command = createCommand("borderSelection", { "width": width })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def grow_selection():
+    """Extends the selection to include adjacent pixels with similar color (Select > Grow).
+
+    Requires an active selection. Uses the Magic Wand's current tolerance.
+    """
+
+    command = createCommand("growSelection", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def similar_selection():
+    """Selects all pixels with color similar to the current selection (Select > Similar).
+
+    Requires an active selection. Uses the Magic Wand's current tolerance.
+    """
+
+    command = createCommand("similarSelection", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_content_aware_fill():
+    """Fills the active selection with content-aware pixels (Edit > Fill > Content-Aware).
+
+    Requires an active selection. Uses Photoshop's standard Content-Aware
+    fill — the Edit > Content-Aware Fill... workspace is modal and cannot
+    be replayed parametrically; use this tool for the equivalent non-modal
+    fill instead.
+    """
+
+    command = createCommand("applyContentAwareFill", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def reset_smart_object_transform(layer_id: int):
+    """Resets all transforms applied to a smart-object layer (Layer > Smart Objects > Reset Transform).
+
+    Returns the smart object to its original placed dimensions and rotation.
+
+    Args:
+        layer_id (int): The smart-object layer to reset.
+    """
+
+    command = createCommand("resetSmartObjectTransform", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def export_smart_object_contents(layer_id: int, file_path: str):
+    """Exports a smart object's embedded contents to a file (Layer > Smart Objects > Export Contents...).
+
+    Args:
+        layer_id (int): The smart-object layer to export.
+        file_path (str): Local destination path. The file format is
+            inferred from the file extension.
+    """
+
+    command = createCommand("exportSmartObjectContents", {
+        "layerId": layer_id,
+        "filePath": file_path,
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def replace_smart_object_contents(layer_id: int, file_path: str):
+    """Replaces a smart object's embedded contents with a new file (Layer > Smart Objects > Replace Contents...).
+
+    All transforms / smart filters applied to the smart object are
+    preserved and applied to the new content.
+
+    Args:
+        layer_id (int): The smart-object layer to replace.
+        file_path (str): Local source path. The file format is inferred
+            from the file extension.
+    """
+
+    command = createCommand("replaceSmartObjectContents", {
+        "layerId": layer_id,
+        "filePath": file_path,
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def ungroup_layers(layer_id: int):
+    """Ungroups the layer group with the specified ID (Layer > Ungroup Layers).
+
+    The group's child layers are promoted to the parent and the group
+    container is removed.
+
+    Args:
+        layer_id (int): The ID of the layer group to ungroup.
+    """
+
+    command = createCommand("ungroupLayers", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def merge_visible_layers(duplicate: bool = False):
+    """Merges all currently visible layers (Layer > Merge Visible).
+
+    Args:
+        duplicate (bool): When True, merges into a new stamped layer
+            without altering the original layers (Cmd+Opt+Shift+E behavior).
+            Default False (destructive merge).
+    """
+
+    command = createCommand("mergeVisibleLayers", { "duplicate": duplicate })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_style_enabled(layer_id: int, enabled: bool = True):
+    """Toggles layer effects visibility (Layer > Layer Style > Show/Hide All Effects).
+
+    Args:
+        layer_id (int): The layer whose effects to toggle.
+        enabled (bool): True shows the effects, False hides them.
+    """
+
+    command = createCommand("setLayerStyleEnabled", {
+        "layerId": layer_id,
+        "enabled": enabled,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_mask_enabled(layer_id: int, enabled: bool = True):
+    """Toggles a layer mask's effect (Layer > Layer Mask > Enable/Disable).
+
+    Args:
+        layer_id (int): The layer whose mask to toggle.
+        enabled (bool): True enables the mask (Shift-click hides
+            disable state), False disables it.
+    """
+
+    command = createCommand("setLayerMaskEnabled", {
+        "layerId": layer_id,
+        "enabled": enabled,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_layer_mask(layer_id: int):
+    """Applies and removes the layer mask (Layer > Layer Mask > Apply).
+
+    Rasterizes the mask into the layer's pixel data and deletes the mask
+    channel.
+
+    Args:
+        layer_id (int): The layer whose mask to apply.
+    """
+
+    command = createCommand("applyLayerMask", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def link_layers(layer_ids: list):
+    """Links two or more layers (Layer > Link Layers).
+
+    Linked layers transform together when one is moved or scaled.
+
+    Args:
+        layer_ids (list): IDs of the layers to link (at least 2).
+    """
+
+    command = createCommand("linkLayers", { "layerIds": layer_ids })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def unlink_layers(layer_ids: list):
+    """Removes link relationships on the specified layers (Layer > Unlink Layers).
+
+    Args:
+        layer_ids (list): IDs of the layers to unlink (at least 1).
+    """
+
+    command = createCommand("unlinkLayers", { "layerIds": layer_ids })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def close_document(document_id: int = None, save_changes: str = "DO_NOT_SAVE_CHANGES"):
+    """Closes a Photoshop document, optionally specified by ID.
+
+    When `document_id` is omitted, closes the currently active document.
+
+    Args:
+        document_id (int, optional): The id of the document to close. Defaults
+            to the active document.
+        save_changes (str): One of "DO_NOT_SAVE_CHANGES" | "SAVE_CHANGES" |
+            "PROMPT_TO_SAVE_CHANGES". Default "DO_NOT_SAVE_CHANGES".
+    """
+
+    options = {"saveChanges": save_changes}
+    if document_id is not None:
+        options["documentId"] = document_id
+
+    command = createCommand("closeDocument", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def create_artboard(name: str, bounds: dict):
+    """Creates a new Artboard in the active document.
+
+    Args:
+        name (str): The artboard name.
+        bounds (dict): The artboard rectangle as
+            {"top": int, "left": int, "bottom": int, "right": int}
+            in pixels.
+    """
+
+    command = createCommand("createArtboard", {
+        "name": name,
+        "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_new_guide_layout(
+    columns: int = 0,
+    rows: int = 0,
+    column_gutter: float = 0,
+    row_gutter: float = 0,
+):
+    """Adds a New Guide Layout to the active document.
+
+    Rule-of-thirds is 3 columns + 3 rows with no gutter. Pass 0 for either
+    columns or rows to omit that axis (e.g. just a column grid).
+
+    Args:
+        columns (int): Number of columns (>=1) or 0 to skip the column axis.
+        rows (int): Number of rows (>=1) or 0 to skip the row axis.
+        column_gutter (float): Optional gutter between columns in pixels.
+        row_gutter (float): Optional gutter between rows in pixels.
+    """
+
+    if columns <= 0 and rows <= 0:
+        raise ValueError("add_new_guide_layout : at least one of columns or rows must be >= 1")
+
+    options = {}
+    if columns > 0:
+        options["columns"] = columns
+        options["columnGutter"] = column_gutter
+    if rows > 0:
+        options["rows"] = rows
+        options["rowGutter"] = row_gutter
+
+    command = createCommand("addNewGuideLayout", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_solid_color_fill_layer(layer_id: int, color: dict):
+    """Adds a Solid Color fill layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The ID of the layer to anchor the new fill layer above.
+        color (dict): The fill color as {"red": int, "green": int, "blue": int}
+            (each 0..255).
+    """
+
+    command = createCommand("addSolidColorFillLayer", {
+        "layerId": layer_id,
+        "color": color,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_color_overlay_layer_style(
+    layer_id: int,
+    color: dict,
+    blend_mode: str = "NORMAL",
+    opacity: int = 100,
+    ):
+    """Adds a Color Overlay layer style to the layer with the specified ID.
+
+    Unlike a Solid Color fill layer, this is a non-destructive layer effect
+    (Layer > Layer Style > Color Overlay) attached to the layer itself.
+
+    Args:
+        layer_id (int): The ID for the layer to add the color overlay to.
+        color (dict): The overlay color as {"red": int, "green": int, "blue": int}
+            (each 0..255).
+        blend_mode (str): The blend mode for the overlay.
+        opacity (int): The opacity of the overlay (0 to 100).
+    """
+
+    command = createCommand("addColorOverlayLayerStyle", {
+        "layerId": layer_id,
+        "color": color,
+        "blendMode": blend_mode,
+        "opacity": opacity,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_selective_color_adjustment_layer(
+    layer_id: int,
+    corrections: dict,
+    method: str = "relative",
+):
+    """Adds a Selective Color adjustment layer above the layer with the specified ID.
+
+    Selective Color tweaks the CMYK component of each color bucket separately.
+    Each correction value is -100..100; positive cyan adds cyan, negative
+    adds red, and so on. Only include the buckets you want to adjust.
+
+    Args:
+        layer_id (int): The ID of the layer to anchor the new adjustment above.
+        corrections (dict): Per-bucket CMYK adjustments. Bucket keys: reds,
+            yellows, greens, cyans, blues, magentas, whites, neutrals,
+            blacks. Each value is a dict with optional keys cyan, magenta,
+            yellow, black (each -100..100). Example:
+                {"reds": {"cyan": -20, "magenta": 10}, "neutrals": {"black": 5}}
+        method (str): "relative" (default) or "absolute".
+    """
+
+    command = createCommand("addSelectiveColorAdjustmentLayer", {
+        "layerId": layer_id,
+        "corrections": corrections,
+        "method": method,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def convert_to_smart_object(layer_id: int):
+    """Converts the layer with the specified ID into a Smart Object.
+
+    Used before applying Camera Raw or other filters non-destructively, or
+    to package multiple layers into a single editable unit.
+
+    Args:
+        layer_id (int): The ID of the layer to convert.
+    """
+
+    command = createCommand("convertToSmartObject", {
+        "layerId": layer_id,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def merge_selected_layers(layer_ids: list[int]):
+    """Merges the specified layers into a single layer.
+
+    Differs from `flatten_all_layers` which collapses the whole stack. Pass
+    at least two layer ids.
+
+    Args:
+        layer_ids (list[int]): Two or more layer ids to merge together.
+    """
+
+    command = createCommand("mergeSelectedLayers", {
+        "layerIds": layer_ids,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def spot_heal_area(layer_id: int, bounds: dict):
+    """Runs a content-aware fill over the specified rectangular area on the layer.
+
+    The deterministic batch-play equivalent of "Spot Healing Brush over
+    this rectangle" — selects the area, content-aware-fills it, and clears
+    the selection.
+
+    Args:
+        layer_id (int): The ID of the layer to heal.
+        bounds (dict): Rectangular area to heal as
+            {"top": int, "left": int, "bottom": int, "right": int}
+            in pixels.
+    """
+
+    command = createCommand("spotHealArea", {
+        "layerId": layer_id,
+        "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_transform(
+    layer_id: int,
+    scale_x_percent: float = 100,
+    scale_y_percent: float = 100,
+    angle: float = 0,
+    translate_x_px: float = 0,
+    translate_y_px: float = 0,
+    anchor: str = "QCSAverage",
+):
+    """Applies a Free-Transform-equivalent operation to the layer in one call.
+
+    Mirrors Photoshop's "Edit > Free Transform" descriptor: a single
+    transform that combines scale, rotation, and translation around a
+    single anchor point. The numerical values typically come from a
+    captured demonstrator's transform descriptor, so omitted args map to
+    the identity transform on that axis.
+
+    Args:
+        layer_id (int): The ID of the layer to transform.
+        scale_x_percent (float): Horizontal scale as a percentage (100 = no change).
+        scale_y_percent (float): Vertical scale as a percentage (100 = no change).
+        angle (float): Rotation in degrees (positive = clockwise).
+        translate_x_px (float): Horizontal translation in pixels.
+        translate_y_px (float): Vertical translation in pixels.
+        anchor (str): Photoshop anchor enum — typically "QCSAverage" (geometric
+            centre), "QCSIndependent", or one of the corner/edge anchors.
+    """
+
+    command = createCommand("applyTransform", {
+        "layerId": layer_id,
+        "scaleXPercent": scale_x_percent,
+        "scaleYPercent": scale_y_percent,
+        "angle": angle,
+        "translateXPx": translate_x_px,
+        "translateYPx": translate_y_px,
+        "anchor": anchor,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_curves_adjustment_layer(
+    layer_id: int,
+    curve_points: list = None,
+    channel: str = "composite",
+):
+    """Adds a Curves adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        curve_points (list): Control points as dicts of
+            {"horizontal": x, "vertical": y} (both 0-255). The first and
+            last points anchor the curve at input 0 and 255. Default is
+            the identity curve.
+        channel (str): "composite" (RGB master), "red", "green", or "blue".
+    """
+
+    if curve_points is None:
+        curve_points = [
+            {"horizontal": 0, "vertical": 0},
+            {"horizontal": 255, "vertical": 255},
+        ]
+
+    command = createCommand("addCurvesAdjustmentLayer", {
+        "layerId": layer_id,
+        "curvePoints": curve_points,
+        "channel": channel,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_levels_adjustment_layer(
+    layer_id: int,
+    input_low: int = 0,
+    input_high: int = 255,
+    gamma: float = 1.0,
+    output_low: int = 0,
+    output_high: int = 255,
+    channel: str = "composite",
+):
+    """Adds a Levels adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        input_low (int): Input black point (0-253).
+        input_high (int): Input white point (2-255).
+        gamma (float): Midtone gamma (0.10-9.99, default 1.0).
+        output_low (int): Output black point (0-255).
+        output_high (int): Output white point (0-255).
+        channel (str): "composite" | "red" | "green" | "blue".
+    """
+
+    command = createCommand("addLevelsAdjustmentLayer", {
+        "layerId": layer_id,
+        "inputLow": input_low,
+        "inputHigh": input_high,
+        "gamma": gamma,
+        "outputLow": output_low,
+        "outputHigh": output_high,
+        "channel": channel,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_hue_saturation_adjustment_layer(
+    layer_id: int,
+    master_hue: int = 0,
+    master_saturation: int = 0,
+    master_lightness: int = 0,
+    colorize: bool = False,
+):
+    """Adds a Hue/Saturation adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        master_hue (int): Master hue shift in degrees (-180..180).
+        master_saturation (int): Master saturation shift (-100..100).
+        master_lightness (int): Master lightness shift (-100..100).
+        colorize (bool): When True, applies the hue/sat as a colorize tint
+            instead of a shift. Defaults to False.
+    """
+
+    command = createCommand("addHueSaturationAdjustmentLayer", {
+        "layerId": layer_id,
+        "masterHue": master_hue,
+        "masterSaturation": master_saturation,
+        "masterLightness": master_lightness,
+        "colorize": colorize,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_exposure_adjustment_layer(
+    layer_id: int,
+    exposure: float = 0.0,
+    offset: float = 0.0,
+    gamma: float = 1.0,
+):
+    """Adds an Exposure adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        exposure (float): Exposure in stops (-20..20). Positive brightens.
+        offset (float): Black-point offset (-0.5..0.5).
+        gamma (float): Gamma correction (0.01..9.99, default 1.0).
+    """
+
+    command = createCommand("addExposureAdjustmentLayer", {
+        "layerId": layer_id,
+        "exposure": exposure,
+        "offset": offset,
+        "gamma": gamma,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_photo_filter_adjustment_layer(
+    layer_id: int,
+    preset: str = None,
+    color: dict = None,
+    density: int = 25,
+    preserve_luminosity: bool = True,
+):
+    """Adds a Photo Filter adjustment layer above the layer with the specified ID.
+
+    Provide either `preset` (a named filter) or `color` (a custom RGB).
+    When both are omitted, defaults to the Warming Filter (85).
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        preset (str, optional): Named filter, e.g. "warmingFilter85",
+            "coolingFilter80", "warmingFilter81", "coolingFilter82".
+        color (dict, optional): Custom RGB color
+            {"red": int, "green": int, "blue": int} (each 0-255).
+        density (int): Filter density percentage (1-100). Default 25.
+        preserve_luminosity (bool): Preserve overall luminance. Default True.
+    """
+
+    options = {
+        "layerId": layer_id,
+        "density": density,
+        "preserveLuminosity": preserve_luminosity,
+    }
+    if preset is not None:
+        options["preset"] = preset
+    if color is not None:
+        options["color"] = color
+
+    command = createCommand("addPhotoFilterAdjustmentLayer", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_channel_mixer_adjustment_layer(
+    layer_id: int,
+    mixes: dict = None,
+    monochrome: bool = False,
+):
+    """Adds a Channel Mixer adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        mixes (dict): Per-output-channel mixing. Keys are output channels
+            ("red", "green", "blue") and each value is a dict with
+            "red", "green", "blue", "constant" as percentages (-200..200).
+            Example: {"red": {"red": 100, "green": 0, "blue": 0, "constant": 0}}.
+            Omitted channels keep their default identity mix.
+        monochrome (bool): When True, all output channels share one mix
+            (true monochrome output). Default False.
+    """
+
+    if mixes is None:
+        mixes = {}
+
+    command = createCommand("addChannelMixerAdjustmentLayer", {
+        "layerId": layer_id,
+        "mixes": mixes,
+        "monochrome": monochrome,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_gradient_map_adjustment_layer(
+    layer_id: int,
+    color_stops: list = None,
+    reverse: bool = False,
+    dither: bool = False,
+):
+    """Adds a Gradient Map adjustment layer above the layer with the specified ID.
+
+    Args:
+        layer_id (int): The layer to anchor the new adjustment above.
+        color_stops (list): Gradient stops as dicts of
+            {"location": 0-100, "midpoint": 0-100, "color": {red, green, blue}}.
+            Default is a black-to-white linear gradient.
+        reverse (bool): Reverse the gradient direction. Default False.
+        dither (bool): Apply dithering to reduce banding. Default False.
+    """
+
+    if color_stops is None:
+        color_stops = [
+            {"location": 0, "midpoint": 50, "color": {"red": 0, "green": 0, "blue": 0}},
+            {"location": 100, "midpoint": 50, "color": {"red": 255, "green": 255, "blue": 255}},
+        ]
+
+    command = createCommand("addGradientMapAdjustmentLayer", {
+        "layerId": layer_id,
+        "colorStops": color_stops,
+        "reverse": reverse,
+        "dither": dither,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def desaturate_layer(layer_id: int):
+    """Desaturates the layer with the specified ID (Image > Adjustments > Desaturate).
+
+    Equivalent to Cmd+Shift+U. Converts all colors to grayscale by zeroing
+    saturation while preserving luminance. Destructive on raster layers.
+
+    Args:
+        layer_id (int): The layer to desaturate.
+    """
+
+    command = createCommand("desaturateLayer", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def invert_layer(layer_id: int):
+    """Inverts the colors of the layer with the specified ID (Image > Adjustments > Invert).
+
+    Equivalent to Cmd+I. Each pixel becomes its color-wheel complement
+    (255 - value per channel). Destructive on raster layers.
+
+    Args:
+        layer_id (int): The layer to invert.
+    """
+
+    command = createCommand("invertLayer", { "layerId": layer_id })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_object(layer_id: int, bounds: dict):
+    """Runs Photoshop's Object Selection AI within a rectangular hint area.
+
+    Equivalent to drawing a rectangle with the Object Selection Tool: PS
+    finds the most prominent object inside the bounding box and selects it.
+
+    Args:
+        layer_id (int): The ID of the layer to operate on.
+        bounds (dict): The hint rectangle as
+            {"top": int, "left": int, "bottom": int, "right": int}
+            in pixels.
+    """
+
+    command = createCommand("selectObject", {
+        "layerId": layer_id,
+        "bounds": bounds,
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_color_range(color: dict, fuzziness: int = 40):
+    """Selects pixels within a color range (Select > Color Range).
+
+    Equivalent to sampling a color with the eyedropper and dragging the
+    Fuzziness slider: PS selects pixels close to the sampled color across the
+    whole document. Higher fuzziness selects a broader range.
+
+    Args:
+        color (dict): The color to sample, as
+            {"red": int, "green": int, "blue": int} (each 0..255).
+        fuzziness (int): Tolerance around the sampled color (0..200).
+    """
+
+    command = createCommand("selectColorRange", {
+        "color": color,
+        "fuzziness": fuzziness,
     })
 
     return sendCommand(command)

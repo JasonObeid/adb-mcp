@@ -9,12 +9,23 @@ const {
 const {hasActiveSelection} = require("./utils")
 
 const clearSelection = async () => {
-    await app.activeDocument.selection.selectRectangle(
-        { top: 0, left: 0, bottom: 0, right: 0 },
-        constants.SelectionType.REPLACE,
-        0,
-        true
-    );
+    // The earlier shape called `selection.selectRectangle(...)` with
+    // empty bounds — which (a) the modern UXP API rejects with a "Could
+    // not find layerId" error path, and (b) leaves a degenerate 1px
+    // selection rather than a true deselect. The standard PS deselect
+    // descriptor is the same shape menu Edit > Deselect emits.
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "set",
+                    _target: [{ _property: "selection", _ref: "channel" }],
+                    to: { _enum: "ordinal", _value: "none" },
+                },
+            ],
+            {},
+        );
+    });
 };
 
 const createMaskFromSelection = async (command) => {
@@ -392,11 +403,239 @@ const invertSelection = async (command) => {
     });
 };
 
+const selectObject = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let bounds = options.bounds;  // { top, left, bottom, right }
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `selectObject : Could not find layerId : ${layerId}`
+        );
+    }
+    if (!bounds || typeof bounds.top !== "number") {
+        throw new Error(
+            `selectObject : bounds (top/left/bottom/right) is required`
+        );
+    }
+
+    return await execute(async () => {
+        selectLayer(layer, true);
+
+        // Object Selection's "Rectangle" mode in PS 2026: provide a hint
+        // rectangle and let the model find the most prominent object inside.
+        let commands = [
+            {
+                _obj: "autoSelectInside",
+                rectangle: {
+                    _obj: "rectangle",
+                    top: { _unit: "pixelsUnit", _value: bounds.top },
+                    left: { _unit: "pixelsUnit", _value: bounds.left },
+                    bottom: { _unit: "pixelsUnit", _value: bounds.bottom },
+                    right: { _unit: "pixelsUnit", _value: bounds.right },
+                },
+                sampleAllLayers: false,
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
+const selectAll = async (command) => {
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "set",
+                    _target: [{ _property: "selection", _ref: "channel" }],
+                    to: { _enum: "ordinal", _value: "allEnum" },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const featherSelection = async (command) => {
+    let options = command.options;
+    let radius = typeof options.radius === "number" ? options.radius : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("featherSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "feather",
+                    radius: { _unit: "pixelsUnit", _value: radius },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const expandSelection = async (command) => {
+    let options = command.options;
+    let amount = typeof options.amount === "number" ? options.amount : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("expandSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "expand",
+                    by: { _unit: "pixelsUnit", _value: amount },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const contractSelection = async (command) => {
+    let options = command.options;
+    let amount = typeof options.amount === "number" ? options.amount : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("contractSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "contract",
+                    by: { _unit: "pixelsUnit", _value: amount },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const smoothSelection = async (command) => {
+    let options = command.options;
+    let radius = typeof options.radius === "number" ? options.radius : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("smoothSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "smooth",
+                    radius: { _unit: "pixelsUnit", _value: radius },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const borderSelection = async (command) => {
+    let options = command.options;
+    let width = typeof options.width === "number" ? options.width : 1;
+    if (!hasActiveSelection()) {
+        throw new Error("borderSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "border",
+                    width: { _unit: "pixelsUnit", _value: width },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const growSelection = async (command) => {
+    if (!hasActiveSelection()) {
+        throw new Error("growSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "grow" }], {});
+    });
+};
+
+const similarSelection = async (command) => {
+    if (!hasActiveSelection()) {
+        throw new Error("similarSelection : Requires an active selection");
+    }
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "similar" }], {});
+    });
+};
+
+const applyContentAwareFill = async (command) => {
+    if (!hasActiveSelection()) {
+        throw new Error("applyContentAwareFill : Requires an active selection");
+    }
+    // PS exposes Content-Aware Fill as a fill op with `contentAware` as
+    // the fill source. The dedicated workspace (Edit > Content-Aware Fill...)
+    // is modal and not parametrically replayable.
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "fill",
+                    mode: { _enum: "blendMode", _value: "normal" },
+                    opacity: { _unit: "percentUnit", _value: 100 },
+                    using: { _enum: "fillContents", _value: "contentAware" },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+// Select > Color Range — selects pixels near `color` within `fuzziness`
+// tolerance. Document-level (no layer target). minimum === maximum samples a
+// single color; Photoshop grows the selection outward by fuzziness.
+// NOTE: verify the colorRange descriptor against a live Photoshop — the
+// recorded form for "Sampled Colors" can vary by version.
+const selectColorRange = async (command) => {
+    let options = command.options;
+    let color = options.color;
+    let fuzziness = options.fuzziness;
+
+    return await execute(async () => {
+        let commands = [
+            {
+                _obj: "colorRange",
+                colorModel: 0,
+                fuzziness: fuzziness,
+                minimum: {
+                    _obj: "RGBColor",
+                    blue: color.blue,
+                    grain: color.green,
+                    red: color.red,
+                },
+                maximum: {
+                    _obj: "RGBColor",
+                    blue: color.blue,
+                    grain: color.green,
+                    red: color.red,
+                },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
+    selectColorRange,
     clearSelection,
     createMaskFromSelection,
     selectSubject,
     selectSky,
+    selectObject,
     cutSelectionToClipboard,
     copyMergedSelectionToClipboard,
     copySelectionToClipboard,
@@ -406,7 +645,16 @@ const commandHandlers = {
     selectPolygon,
     selectEllipse,
     selectRectangle,
-    invertSelection
+    invertSelection,
+    selectAll,
+    featherSelection,
+    expandSelection,
+    contractSelection,
+    smoothSelection,
+    borderSelection,
+    growSelection,
+    similarSelection,
+    applyContentAwareFill,
 };
 
 module.exports = {

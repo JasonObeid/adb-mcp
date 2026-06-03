@@ -462,21 +462,27 @@ const saveDocumentAs = async (command) => {
 };
 
 const setActiveDocument = async (command) => {
-
     let options = command.options;
     let documentId = options.documentId;
-    let docs = listOpenDocuments();
 
-    for (let doc of docs) {
+    // `listOpenDocuments()` returns plain objects (see generateDocumentInfo),
+    // but `app.activeDocument` requires a real Document instance. Iterate
+    // `app.documents` to grab the live instance.
+    let target = null;
+    for (let doc of app.documents) {
         if (doc.id === documentId) {
-            await execute(async () => {
-                app.activeDocument = doc;
-            });
-
-            return
+            target = doc;
+            break;
         }
     }
-}
+    if (!target) {
+        throw new Error(`setActiveDocument : Could not find documentId : ${documentId}`);
+    }
+
+    await execute(async () => {
+        app.activeDocument = target;
+    });
+};
 
 const getDocuments = async (command) => {
     return listOpenDocuments()
@@ -500,6 +506,11 @@ const createDocument = async (command) => {
     await execute(async () => {
         await app.createDocument({
             typename: "DocumentCreateOptions",
+            // The wrapper exposes `document_name` but we previously
+            // dropped it on the floor here — the doc would show in PS
+            // as "Untitled-1" regardless. Pass it through; PS auto-falls
+            // back to its Untitled-N counter when `name` is missing.
+            name: options.name,
             width: options.width,
             height: options.height,
             resolution: options.resolution,
@@ -512,6 +523,123 @@ const createDocument = async (command) => {
         let background = findLayerByName("Background");
         background.allLocked = false;
         background.name = "Background";
+    });
+};
+
+const closeDocument = async (command) => {
+    let options = command.options || {};
+    let documentId = options.documentId;
+    let saveOption = (options.saveChanges || "DO_NOT_SAVE_CHANGES").toUpperCase();
+
+    let saveOptions = {
+        "DO_NOT_SAVE_CHANGES": constants.SaveOptions.DONOTSAVECHANGES,
+        "SAVE_CHANGES": constants.SaveOptions.SAVECHANGES,
+        "PROMPT_TO_SAVE_CHANGES": constants.SaveOptions.PROMPTTOSAVECHANGES,
+    };
+    // PS constants can be falsy numbers (e.g. enum value 0) — use an
+    // explicit `undefined` check instead of `!saveOpt`, which mis-rejects
+    // a valid 0-value constant as "unknown".
+    if (!(saveOption in saveOptions)) {
+        throw new Error(
+            `closeDocument : Unknown saveChanges value : ${saveOption}. ` +
+            `Use DO_NOT_SAVE_CHANGES | SAVE_CHANGES | PROMPT_TO_SAVE_CHANGES.`
+        );
+    }
+    let saveOpt = saveOptions[saveOption];
+
+    // Default to the active document when no id is supplied.
+    let target = null;
+    if (typeof documentId === "number") {
+        for (let doc of app.documents) {
+            if (doc.id === documentId) {
+                target = doc;
+                break;
+            }
+        }
+        if (!target) {
+            throw new Error(
+                `closeDocument : Could not find documentId : ${documentId}`
+            );
+        }
+    } else {
+        target = app.activeDocument;
+    }
+
+    await execute(async () => {
+        await target.close(saveOpt);
+    });
+};
+
+const createArtboard = async (command) => {
+    let options = command.options;
+    let name = options.name || "Artboard 1";
+    let bounds = options.bounds;  // { top, left, bottom, right }
+
+    if (!bounds || typeof bounds.top !== "number") {
+        throw new Error(
+            `createArtboard : bounds (top/left/bottom/right) is required`
+        );
+    }
+
+    await execute(async () => {
+        let commands = [
+            {
+                _obj: "make",
+                _target: [{ _ref: "artboardSection" }],
+                artboardRect: {
+                    _obj: "classFloatRect",
+                    top: bounds.top,
+                    left: bounds.left,
+                    bottom: bounds.bottom,
+                    right: bounds.right,
+                },
+                using: {
+                    _obj: "artboardSection",
+                    name: name,
+                },
+            },
+        ];
+        await action.batchPlay(commands, {});
+    });
+};
+
+const addNewGuideLayout = async (command) => {
+    let options = command.options;
+    let columns = options.columns;  // int or null
+    let rows = options.rows;        // int or null
+    let columnGutter = options.columnGutter;  // pixels or null
+    let rowGutter = options.rowGutter;        // pixels or null
+
+    if (!columns && !rows) {
+        throw new Error(
+            `addNewGuideLayout : at least one of columns or rows is required`
+        );
+    }
+
+    await execute(async () => {
+        let descriptor = {
+            _obj: "newGuideGrid",
+            guideTarget: { _enum: "guideTarget", _value: "guideTargetCanvas" },
+        };
+        if (columns) {
+            descriptor.columns = {
+                _obj: "guideGrid",
+                count: columns,
+                gutter: typeof columnGutter === "number"
+                    ? { _unit: "pixelsUnit", _value: columnGutter }
+                    : { _unit: "pixelsUnit", _value: 0 },
+            };
+        }
+        if (rows) {
+            descriptor.rows = {
+                _obj: "guideGrid",
+                count: rows,
+                gutter: typeof rowGutter === "number"
+                    ? { _unit: "pixelsUnit", _value: rowGutter }
+                    : { _unit: "pixelsUnit", _value: 0 },
+            };
+        }
+        await action.batchPlay([descriptor], {});
     });
 };
 
@@ -530,6 +658,162 @@ const executeBatchPlayCommand = async (commands) => {
     return out;
 }
 
+const resizeImage = async (command) => {
+    let options = command.options;
+    let width = options.width;
+    let height = options.height;
+    let resolution = options.resolution;
+
+    await execute(async () => {
+        let to = { _obj: "imageSize" };
+        if (typeof width === "number") {
+            to.width = { _unit: "pixelsUnit", _value: width };
+        }
+        if (typeof height === "number") {
+            to.height = { _unit: "pixelsUnit", _value: height };
+        }
+        if (typeof resolution === "number") {
+            to.resolution = { _unit: "densityUnit", _value: resolution };
+        }
+        to.constrainProportions = options.constrainProportions !== false;
+        to.scaleStyles = options.scaleStyles !== false;
+        await action.batchPlay([to], {});
+    });
+};
+
+const resizeCanvas = async (command) => {
+    let options = command.options;
+    let width = options.width;
+    let height = options.height;
+    let anchor = options.anchor || "middleCenter";
+
+    // PS canvas-size anchor combines horizontal + vertical enums. Accept
+    // a 9-position string (topLeft, topCenter, topRight, middleLeft,
+    // middleCenter, middleRight, bottomLeft, bottomCenter, bottomRight)
+    // and split it.
+    const horizontalByAnchor = {
+        topLeft: "left", middleLeft: "left", bottomLeft: "left",
+        topCenter: "center", middleCenter: "center", bottomCenter: "center",
+        topRight: "right", middleRight: "right", bottomRight: "right",
+    };
+    const verticalByAnchor = {
+        topLeft: "top", topCenter: "top", topRight: "top",
+        middleLeft: "center", middleCenter: "center", middleRight: "center",
+        bottomLeft: "bottom", bottomCenter: "bottom", bottomRight: "bottom",
+    };
+
+    await execute(async () => {
+        let cmd = {
+            _obj: "canvasSize",
+            horizontal: { _enum: "horizontalLocation", _value: horizontalByAnchor[anchor] || "center" },
+            vertical: { _enum: "verticalLocation", _value: verticalByAnchor[anchor] || "center" },
+        };
+        if (typeof width === "number") {
+            cmd.width = { _unit: "pixelsUnit", _value: width };
+        }
+        if (typeof height === "number") {
+            cmd.height = { _unit: "pixelsUnit", _value: height };
+        }
+        if (options.relative === true) {
+            cmd.relative = true;
+        }
+        await action.batchPlay([cmd], {});
+    });
+};
+
+const rotateCanvas = async (command) => {
+    let options = command.options;
+    let angle = typeof options.angle === "number" ? options.angle : 0;
+
+    // PS exposes a single 'rotateEventEnum' that handles 90 CW/CCW, 180,
+    // arbitrary. We prefer the arbitrary form for max flexibility.
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "rotateEventEnum",
+                    angle: { _unit: "angleUnit", _value: angle },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const trimDocument = async (command) => {
+    let options = command.options;
+    // 'transparency' | 'topLeftPixel' | 'bottomRightPixel'
+    let trimBasedOn = options.trimBasedOn || "transparency";
+    let trimTop = options.top !== false;
+    let trimBottom = options.bottom !== false;
+    let trimLeft = options.left !== false;
+    let trimRight = options.right !== false;
+
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "trim",
+                    bottom: trimBottom,
+                    left: trimLeft,
+                    right: trimRight,
+                    top: trimTop,
+                    trimBasedOn: { _enum: "trimBasedOn", _value: trimBasedOn },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+// `{ _obj: 'undo' }` is a no-op in current UXP — the BatchPlay descriptor
+// is accepted but doesn't rewind history. Navigate the history state
+// explicitly instead, which is the standard PS scripting form for
+// programmatic undo/redo.
+const undoCommand = async (command) => {
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "select",
+                    _target: [
+                        { _enum: "ordinal", _ref: "historyState", _value: "previous" },
+                    ],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const redoCommand = async (command) => {
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "select",
+                    _target: [
+                        { _enum: "ordinal", _ref: "historyState", _value: "next" },
+                    ],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const pasteInto = async (command) => {
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "pasteInto" }], {});
+    });
+};
+
+const pasteOutside = async (command) => {
+    await execute(async () => {
+        await action.batchPlay([{ _obj: "pasteOutside" }], {});
+    });
+};
+
 const commandHandlers = {
     generativeFill,
     executeBatchPlayCommand,
@@ -547,6 +831,17 @@ const commandHandlers = {
     saveDocument,
     saveDocumentAs,
     createDocument,
+    closeDocument,
+    createArtboard,
+    addNewGuideLayout,
+    resizeImage,
+    resizeCanvas,
+    rotateCanvas,
+    trimDocument,
+    undoCommand,
+    redoCommand,
+    pasteInto,
+    pasteOutside,
 };
 
 module.exports = {

@@ -37,7 +37,10 @@ const {
     hasActiveSelection,
     _saveDocumentAs,
     convertFontSize,
-    convertFromPhotoshopFontSize
+    convertFromPhotoshopFontSize,
+    tokenify,
+    createFile,
+    fileExists,
 } = require("./utils");
 
 
@@ -840,8 +843,12 @@ const harmonizeLayer = async (command) => {
                         "_value": "targetEnum"
                     }
                 ],
-                "documentID": 60,
-                "layerID": 7,
+                // These were hardcoded to a stale recording (60 / 7) which
+                // made `syntheticGenHarmonize` operate on a phantom layer
+                // and return no usable layerID. Wire them to the actual
+                // active document and the layer we're harmonising.
+                "documentID": app.activeDocument.id,
+                "layerID": layerId,
                 "prompt": "",
                 "serviceID": "gen_harmonize",
                 "serviceOptionsList": {
@@ -886,7 +893,6 @@ const harmonizeLayer = async (command) => {
         ];
 
 
-        console.log(rasterizeLayer)
         if(rasterizeLayer) {
             commands.push({
                 _obj: "rasterizeLayer",
@@ -901,9 +907,13 @@ const harmonizeLayer = async (command) => {
         }
 
         let o = await action.batchPlay(commands, {});
-        let layerId = o[0].layerID;
+        // Renamed from `layerId` to avoid shadowing the outer binding —
+        // the BatchPlay payload above references the outer `layerId`,
+        // and a `let layerId` here put that earlier reference in the
+        // temporal dead zone.
+        let newLayerId = o[0].layerID;
 
-        let l = findLayer(layerId);
+        let l = findLayer(newLayerId);
         l.name = newLayerName;
     });
 };
@@ -950,6 +960,455 @@ const getLayerImage = async (command) => {
     return out;
 };
 
+const convertToSmartObject = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `convertToSmartObject : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            // Convert (one or more selected layers) to a Smart Object.
+            { _obj: "newPlacedLayer" },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
+const mergeSelectedLayers = async (command) => {
+    let options = command.options;
+    let layerIds = options.layerIds;
+
+    if (!Array.isArray(layerIds) || layerIds.length < 2) {
+        throw new Error(
+            `mergeSelectedLayers : layerIds must be an array of at least 2 layer ids`
+        );
+    }
+
+    let layers = [];
+    for (const layerId of layerIds) {
+        let layer = findLayer(layerId);
+        if (!layer) {
+            throw new Error(
+                `mergeSelectedLayers : Could not find layerId : ${layerId}`
+            );
+        }
+        layers.push(layer);
+    }
+
+    await execute(async () => {
+        // Multi-select the input layers, then run the "Merge Layers" command.
+        for (let i = 0; i < layers.length; i++) {
+            selectLayer(layers[i], i === 0);
+        }
+
+        let commands = [{ _obj: "mergeLayersNew" }];
+        await action.batchPlay(commands, {});
+    });
+};
+
+const applyTransform = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `applyTransform : Could not find layerId : ${layerId}`
+        );
+    }
+
+    let scaleXPercent = typeof options.scaleXPercent === "number" ? options.scaleXPercent : 100;
+    let scaleYPercent = typeof options.scaleYPercent === "number" ? options.scaleYPercent : 100;
+    let angle = typeof options.angle === "number" ? options.angle : 0;
+    let translateXPx = typeof options.translateXPx === "number" ? options.translateXPx : 0;
+    let translateYPx = typeof options.translateYPx === "number" ? options.translateYPx : 0;
+    let anchor = typeof options.anchor === "string" ? options.anchor : "QCSAverage";
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let commands = [
+            {
+                _obj: "transform",
+                _target: [
+                    {
+                        _enum: "ordinal",
+                        _ref: "layer",
+                        _value: "targetEnum",
+                    },
+                ],
+                freeTransformCenterState: { _enum: "quadCenterState", _value: anchor },
+                offset: {
+                    _obj: "offset",
+                    horizontal: { _unit: "pixelsUnit", _value: translateXPx },
+                    vertical: { _unit: "pixelsUnit", _value: translateYPx },
+                },
+                width: { _unit: "percentUnit", _value: scaleXPercent },
+                height: { _unit: "percentUnit", _value: scaleYPercent },
+                angle: { _unit: "angleUnit", _value: angle },
+                interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "bicubic" },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
+const spotHealArea = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let bounds = options.bounds;  // { top, left, bottom, right }
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `spotHealArea : Could not find layerId : ${layerId}`
+        );
+    }
+    if (!bounds || typeof bounds.top !== "number") {
+        throw new Error(
+            `spotHealArea : bounds (top/left/bottom/right) is required`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        // Make a rectangular selection over the area to heal, then run a
+        // content-aware fill — the deterministic batch-play equivalent of
+        // "Spot Healing Brush over this rectangle."
+        await app.activeDocument.selection.selectRectangle(
+            bounds,
+            constants.SelectionType.REPLACE,
+            0,
+            true
+        );
+
+        let commands = [
+            {
+                _obj: "fill",
+                using: { _enum: "fillContents", _value: "contentAware" },
+                contentAwareColorAdaptationFill: true,
+                contentAwareRotateFill: false,
+                opacity: { _unit: "percentUnit", _value: 100 },
+                mode: { _enum: "blendMode", _value: "normal" },
+            },
+            // Drop the selection so subsequent ops aren't constrained to it.
+            {
+                _obj: "set",
+                _target: [{ _ref: "channel", _property: "selection" }],
+                to: { _enum: "ordinal", _value: "none" },
+            },
+        ];
+        await action.batchPlay(commands, {});
+    });
+};
+
+const ungroupLayers = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`ungroupLayers : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "ungroupLayersEvent",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const mergeVisibleLayers = async (command) => {
+    let options = command.options;
+    let duplicate = options.duplicate === true;
+
+    await execute(async () => {
+        await action.batchPlay(
+            [
+                {
+                    _obj: "mergeVisible",
+                    duplicate: duplicate,
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const setLayerStyleEnabled = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let enabled = options.enabled !== false;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`setLayerStyleEnabled : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        // PS uses the same `set` shape for both Show All Effects and Hide
+        // All Effects — toggling `enabled` on the layerEffects object.
+        await action.batchPlay(
+            [
+                {
+                    _obj: "set",
+                    _target: [
+                        { _property: "layerEffects", _ref: "property" },
+                        { _enum: "ordinal", _ref: "layer", _value: "targetEnum" },
+                    ],
+                    to: { _obj: "layerEffects", enabled: enabled },
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const setLayerMaskEnabled = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let enabled = options.enabled !== false;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`setLayerMaskEnabled : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: enabled ? "enable" : "disable",
+                    _target: [
+                        { _enum: "channel", _ref: "channel", _value: "mask" },
+                    ],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const applyLayerMask = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`applyLayerMask : Could not find layerId : ${layerId}`);
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        // Apply Layer Mask: PS rasterizes the mask into the layer pixels
+        // and removes the mask channel.
+        await action.batchPlay(
+            [
+                {
+                    _obj: "delete",
+                    _target: [
+                        { _enum: "channel", _ref: "channel", _value: "mask" },
+                    ],
+                    apply: true,
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const linkLayers = async (command) => {
+    let options = command.options;
+    let layerIds = options.layerIds || [];
+    if (layerIds.length < 2) {
+        throw new Error(`linkLayers : need at least 2 layerIds, got ${layerIds.length}`);
+    }
+
+    let layers = layerIds.map((id) => {
+        let layer = findLayer(id);
+        if (!layer) {
+            throw new Error(`linkLayers : Could not find layerId : ${id}`);
+        }
+        return layer;
+    });
+
+    await execute(async () => {
+        // Select all the target layers then link them.
+        app.activeDocument.activeLayers.forEach((l) => (l.selected = false));
+        layers.forEach((l) => (l.selected = true));
+        await action.batchPlay(
+            [
+                {
+                    _obj: "linkSelectedLayers",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const resetSmartObjectTransform = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`resetSmartObjectTransform : Could not find layerId : ${layerId}`);
+    }
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "placedLayerResetTransforms",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
+const exportSmartObjectContents = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let filePath = options.filePath;
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`exportSmartObjectContents : Could not find layerId : ${layerId}`);
+    }
+    if (typeof filePath !== "string" || filePath.length === 0) {
+        throw new Error(`exportSmartObjectContents : filePath is required`);
+    }
+
+    // `placedLayerExportContents` is interactive in PS 2026 — neither the
+    // `null:` nor `in:` descriptor field is honoured and the action always
+    // pops a Save sheet. Drive the canonical headless equivalent instead:
+    // open the smart object contents (`placedLayerEditContents`), save the
+    // resulting doc to the requested path, then close it.
+
+    const sourceDocId = app.activeDocument.id;
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "placedLayerEditContents",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                    _options: { dialogOptions: "dontDisplay" },
+                },
+            ],
+            { dialogOptions: "dontDisplay" },
+        );
+    });
+
+    if (app.activeDocument.id === sourceDocId) {
+        throw new Error(
+            `exportSmartObjectContents : placedLayerEditContents did not open ` +
+            `the smart-object source doc (still on document ${sourceDocId})`,
+        );
+    }
+
+    // The newly-opened smart-object contents doc is now active. Save it
+    // to the caller's path, then close it without committing.
+    const fileType = (filePath.split(".").pop() || "PSD").toUpperCase();
+    const result = await _saveDocumentAs(filePath, fileType);
+
+    await execute(async () => {
+        await app.activeDocument.closeWithoutSaving();
+    });
+
+    return result;
+};
+
+const replaceSmartObjectContents = async (command) => {
+    let options = command.options;
+    let layerId = options.layerId;
+    let filePath = options.filePath;
+    let layer = findLayer(layerId);
+    if (!layer) {
+        throw new Error(`replaceSmartObjectContents : Could not find layerId : ${layerId}`);
+    }
+    if (typeof filePath !== "string" || filePath.length === 0) {
+        throw new Error(`replaceSmartObjectContents : filePath is required`);
+    }
+
+    // Replace reads FROM the file — must already exist with content.
+    if (!(await fileExists(filePath))) {
+        throw new Error(`replaceSmartObjectContents : file not found : ${filePath}`);
+    }
+    const pathToken = await tokenify(filePath);
+
+    await execute(async () => {
+        selectLayer(layer, true);
+        await action.batchPlay(
+            [
+                {
+                    _obj: "placedLayerReplaceContents",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                    null: { _kind: "local", _path: pathToken },
+                    _options: { dialogOptions: "dontDisplay" },
+                },
+            ],
+            { dialogOptions: "dontDisplay" },
+        );
+    });
+};
+
+const unlinkLayers = async (command) => {
+    let options = command.options;
+    let layerIds = options.layerIds || [];
+    if (layerIds.length === 0) {
+        throw new Error(`unlinkLayers : empty layerIds`);
+    }
+
+    let layers = layerIds.map((id) => {
+        let layer = findLayer(id);
+        if (!layer) {
+            throw new Error(`unlinkLayers : Could not find layerId : ${id}`);
+        }
+        return layer;
+    });
+
+    await execute(async () => {
+        app.activeDocument.activeLayers.forEach((l) => (l.selected = false));
+        layers.forEach((l) => (l.selected = true));
+        await action.batchPlay(
+            [
+                {
+                    _obj: "unlinkSelectedLayers",
+                    _target: [{ _enum: "ordinal", _ref: "layer", _value: "targetEnum" }],
+                },
+            ],
+            {},
+        );
+    });
+};
+
 const commandHandlers = {
     renameLayers,
     getLayerImage,
@@ -976,6 +1435,20 @@ const commandHandlers = {
     createMultiLineTextLayer,
     createSingleLineTextLayer,
     createPixelLayer,
+    convertToSmartObject,
+    mergeSelectedLayers,
+    spotHealArea,
+    applyTransform,
+    ungroupLayers,
+    mergeVisibleLayers,
+    setLayerStyleEnabled,
+    setLayerMaskEnabled,
+    applyLayerMask,
+    linkLayers,
+    unlinkLayers,
+    resetSmartObjectTransform,
+    exportSmartObjectContents,
+    replaceSmartObjectContents,
 };
 
 module.exports = {

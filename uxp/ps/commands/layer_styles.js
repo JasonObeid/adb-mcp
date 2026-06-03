@@ -312,10 +312,77 @@ const createGradientLayerStyle = async (command) => {
 
 
 
+const addColorOverlayLayerStyle = async (command) => {
+
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `addColorOverlayLayerStyle : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let color = options.color;
+        let commands = [
+            // Set Color Overlay (solidFill) effect on the current layer
+            {
+                _obj: "set",
+                _target: [
+                    {
+                        _property: "layerEffects",
+                        _ref: "property",
+                    },
+                    {
+                        _enum: "ordinal",
+                        _ref: "layer",
+                        _value: "targetEnum",
+                    },
+                ],
+                to: {
+                    _obj: "layerEffects",
+                    solidFill: {
+                        _obj: "solidFill",
+                        color: {
+                            _obj: "RGBColor",
+                            blue: color.blue,
+                            grain: color.green,
+                            red: color.red,
+                        },
+                        enabled: true,
+                        mode: {
+                            _enum: "blendMode",
+                            _value: options.blendMode.toLowerCase(),
+                        },
+                        opacity: {
+                            _unit: "percentUnit",
+                            _value: options.opacity,
+                        },
+                        present: true,
+                        showInDialog: true,
+                    },
+                    scale: {
+                        _unit: "percentUnit",
+                        _value: 100.0,
+                    },
+                },
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
 const commandHandlers = {
     createGradientLayerStyle,
     addStrokeLayerStyle,
-    addDropShadowLayerStyle
+    addDropShadowLayerStyle,
+    addColorOverlayLayerStyle
 };
 
 module.exports = {

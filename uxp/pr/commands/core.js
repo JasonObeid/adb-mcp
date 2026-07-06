@@ -162,7 +162,7 @@ const appendVideoFilter = async (command) => {
         throw new Error(`appendVideoFilter : Requires an active sequence.`)
     }
 
-    let trackItem = await getTrackTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
+    let trackItem = await getTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
 
     let effectName = options.effectName
     let properties = options.properties
@@ -562,7 +562,199 @@ const exportSequence = async (command) => {
     await manager.exportSequence(sequence, constants.ExportType.IMMEDIATELY, outputPath, presetPath);
 }
 
+const setPlayerPosition = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const tick = options.tick;
+
+    let sequence = await _getSequenceFromId(sequenceId)
+
+    if(!sequence) {
+        throw new Error(`setPlayerPosition : Requires an active sequence.`)
+    }
+
+    let position = await app.TickTime.createWithTicks(tick.toString())
+
+    // setPlayerPosition(TickTime) : verified against Premiere UXP DOM (Sequence, min 25.0)
+    let success = await sequence.setPlayerPosition(position)
+
+    return { success, tick }
+}
+
+const getPlayerPosition = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+
+    let sequence = await _getSequenceFromId(sequenceId)
+
+    if(!sequence) {
+        throw new Error(`getPlayerPosition : Requires an active sequence.`)
+    }
+
+    // getPlayerPosition() : verified against Premiere UXP DOM (Sequence, min 25.0)
+    let position = await sequence.getPlayerPosition()
+
+    return {
+        tick: position.ticksNumber,
+        ticks: position.ticks,
+        seconds: position.seconds
+    }
+}
+
+const moveClip = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackItemIndex = options.trackItemIndex;
+    const trackType = options.trackType;
+    const shiftTicks = options.shiftTicks;
+
+    let project = await app.Project.getActiveProject()
+    let sequence = await _getSequenceFromId(sequenceId)
+
+    if(!sequence) {
+        throw new Error(`moveClip : Requires an active sequence.`)
+    }
+
+    let trackItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType)
+
+    let shiftTick = await app.TickTime.createWithTicks(shiftTicks.toString())
+
+    // createMoveAction(TickTime) shifts the item's inPoint by the given tick amount.
+    // Same method used privately by _closeGapsOnSequence. Verified against Premiere UXP DOM.
+    execute(() => {
+        let action = trackItem.createMoveAction(shiftTick)
+        return [action]
+    }, project)
+
+    return { shiftTicks }
+}
+
+const splitClip = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackItemIndex = options.trackItemIndex;
+    const trackType = options.trackType;
+    const tick = options.tick;
+
+    let project = await app.Project.getActiveProject()
+    let sequence = await _getSequenceFromId(sequenceId)
+
+    if(!sequence) {
+        throw new Error(`splitClip : Requires an active sequence.`)
+    }
+
+    let trackItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType)
+
+    let startTime = await trackItem.getStartTime()
+    let endTime = await trackItem.getEndTime()
+
+    let startTicks = startTime.ticksNumber
+    let endTicks = endTime.ticksNumber
+
+    if (tick <= startTicks || tick >= endTicks) {
+        throw new Error(
+            `splitClip : split tick [${tick}] must fall strictly inside the clip span (${startTicks} - ${endTicks}).`
+        )
+    }
+
+    // The Premiere UXP DOM does not (as of 25.x) expose a native razor / split action on
+    // SequenceEditor or the track item. We emulate the razor by cloning the clip in place
+    // (overwrite clone at zero offset), then trimming the original to end at the split tick
+    // and trimming the clone to start at the split tick. Both halves keep the same source
+    // media, matching the razor tool's behavior.
+    let editor = await app.SequenceEditor.getEditor(sequence)
+
+    let splitTick = await app.TickTime.createWithTicks(tick.toString())
+    let zeroOffset = await app.TickTime.createWithTicks("0")
+
+    // createCloneTrackItemAction(trackItem, timeOffset, videoTrackVerticalOffset,
+    //   audioTrackVerticalOffset, alignToVideo, isInsert)
+    // A zero timeOffset / zero vertical offset with isInsert=false produces an in-place
+    // overwrite clone that lands exactly on top of the original.
+    // TODO(verify): exact clone placement semantics (does timeOffset=0 land in-place, and
+    // does the clone preserve the source in/out points) are inferred from the DOM docs and
+    // must be confirmed against a live Premiere host.
+    execute(() => {
+        let cloneAction = editor.createCloneTrackItemAction(
+            trackItem,
+            zeroOffset,
+            0,
+            0,
+            true,
+            false
+        )
+        return [cloneAction]
+    }, project)
+
+    // Re-resolve the track items after the clone. The clone occupies the same span as the
+    // original, so we trim the original (still at trackItemIndex) to end at the split tick,
+    // and trim the newly-created clone to start at the split tick.
+    let originalItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType)
+
+    // Locate the clone: the track item (other than the original) whose span covers the split tick.
+    let items = await getTrackItems(sequence, trackIndex, trackType)
+    let cloneItem;
+    for (const candidate of items) {
+        if (candidate === originalItem) {
+            continue
+        }
+        let cStart = (await candidate.getStartTime()).ticksNumber
+        let cEnd = (await candidate.getEndTime()).ticksNumber
+        if (cStart <= tick && tick < cEnd && cStart === startTicks && cEnd === endTicks) {
+            cloneItem = candidate
+            break
+        }
+    }
+
+    if (!cloneItem) {
+        throw new Error(
+            `splitClip : Could not locate cloned clip after clone action. The clip may not have been duplicated.`
+        )
+    }
+
+    execute(() => {
+        let out = []
+        // Left half: original clip ends at the split tick.
+        out.push(originalItem.createSetEndAction(splitTick))
+        // Right half: cloned clip starts at the split tick.
+        out.push(cloneItem.createSetStartAction(splitTick))
+        return out
+    }, project)
+
+    return { splitTick: tick }
+}
+
+const listEffects = async (command) => {
+    // VideoFilterFactory.getMatchNames() / getDisplayNames() : verified static methods
+    // on the Premiere UXP DOM (min 25.0), both return string[].
+    let matchNames = await app.VideoFilterFactory.getMatchNames()
+    let displayNames = await app.VideoFilterFactory.getDisplayNames()
+
+    return {
+        matchNames,
+        displayNames
+    }
+}
+
+const listTransitions = async (command) => {
+    // TransitionFactory.getVideoTransitionMatchNames() : verified static method on the
+    // Premiere UXP DOM (min 25.0), returns a promise resolving to string[].
+    let matchNames = await app.TransitionFactory.getVideoTransitionMatchNames()
+
+    return {
+        matchNames
+    }
+}
+
 const commandHandlers = {
+    splitClip,
+    setPlayerPosition,
+    getPlayerPosition,
+    moveClip,
+    listEffects,
+    listTransitions,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,

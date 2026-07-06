@@ -830,6 +830,178 @@ def import_media(file_paths:list):
 
     return sendCommand(command)
 
+@mcp.tool()
+def split_clip(sequence_id: str, track_index: int, track_item_index: int, track_type: str, tick: int):
+    """
+    Splits (razors) a clip on the timeline at the specified sequence tick, producing two
+    adjacent clips that reference the same source media. This mirrors the razor / blade tool.
+
+    The tick must fall strictly inside the target clip's timeline span (after its start and
+    before its end), otherwise the split is a no-op / error.
+
+    Args:
+        sequence_id (str): The id for the sequence containing the clip to split.
+        track_index (int): The index of the track containing the target clip.
+            Track indices start at 0 for the first track and increment upward.
+            For video tracks, this refers to video track indices.
+            For audio tracks, this refers to audio track indices.
+        track_item_index (int): The index of the clip within the track to split.
+            Clip indices start at 0 for the first clip in the track and increment from left to right.
+        track_type (str): Specifies which type of track the clip is on.
+            Valid values:
+            - "VIDEO": The clip is on the specified video track
+            - "AUDIO": The clip is on the specified audio track
+        tick (int): The timeline position (in ticks, relative to the start of the sequence)
+            at which to split the clip.
+    """
+
+    command = createCommand("splitClip", {
+        "sequenceId": sequence_id,
+        "trackIndex": track_index,
+        "trackItemIndex": track_item_index,
+        "trackType": track_type,
+        "tick": tick
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_player_position(sequence_id: str, tick: int):
+    """
+    Moves the playhead (current time indicator / CTI) of the specified sequence to a
+    timeline position, in ticks. Useful for replaying scrubbing and for anchoring an
+    edit (such as a razor / split) at the current playhead position.
+
+    Args:
+        sequence_id (str): The id for the sequence whose playhead should be moved.
+        tick (int): The timeline position (in ticks, relative to the start of the sequence)
+            to move the playhead to.
+    """
+
+    command = createCommand("setPlayerPosition", {
+        "sequenceId": sequence_id,
+        "tick": tick
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_player_position(sequence_id: str):
+    """
+    Returns the current playhead (current time indicator / CTI) position of the specified
+    sequence, in ticks and seconds.
+
+    Args:
+        sequence_id (str): The id for the sequence whose playhead position should be read.
+    """
+
+    command = createCommand("getPlayerPosition", {
+        "sequenceId": sequence_id
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def move_clip(sequence_id: str, track_index: int, track_item_index: int, track_type: str, shift_ticks: int):
+    """
+    Moves a clip along the timeline by shifting it by a number of ticks. A positive value
+    shifts the clip later (to the right); a negative value shifts it earlier (to the left).
+
+    This does not close or open gaps on other clips; it only moves the target clip. Moving a
+    clip so that it overlaps another clip on the same track may overwrite the overlapped content.
+
+    Args:
+        sequence_id (str): The id for the sequence containing the clip to move.
+        track_index (int): The index of the track containing the target clip.
+            Track indices start at 0 for the first track and increment upward.
+            For video tracks, this refers to video track indices.
+            For audio tracks, this refers to audio track indices.
+        track_item_index (int): The index of the clip within the track to move.
+            Clip indices start at 0 for the first clip in the track and increment from left to right.
+        track_type (str): Specifies which type of track the clip is on.
+            Valid values:
+            - "VIDEO": The clip is on the specified video track
+            - "AUDIO": The clip is on the specified audio track
+        shift_ticks (int): The amount, in ticks, to shift the clip.
+            - Positive: shift later (right)
+            - Negative: shift earlier (left)
+    """
+
+    command = createCommand("moveClip", {
+        "sequenceId": sequence_id,
+        "trackIndex": track_index,
+        "trackItemIndex": track_item_index,
+        "trackType": track_type,
+        "shiftTicks": shift_ticks
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def apply_effect(sequence_id: str, video_track_index: int, track_item_index: int, effect_match_name: str, params: list[dict] = []):
+    """
+    Applies an arbitrary video effect (filter) to a clip, identified by its Premiere / After
+    Effects match name. This is the generic form of the dedicated add_*_effect tools; use
+    list_effects() to discover available match names.
+
+    Args:
+        sequence_id (str): The id for the sequence to add the effect to.
+        video_track_index (int): The index of the video track containing the target clip.
+            Track indices start at 0 for the first video track and increment upward.
+        track_item_index (int): The index of the clip within the track to apply the effect to.
+            Clip indices start at 0 for the first clip in the track and increment from left to right.
+        effect_match_name (str): The match name of the effect to apply, for example
+            "AE.ADBE Gaussian Blur 2", "AE.ADBE Black & White", "PR.ADBE Solarize".
+            Use list_effects() to enumerate valid match names.
+        params (list[dict], optional): An optional list of effect parameters to set after the
+            effect is applied. Each entry is a dict with:
+            - "name" (str): The display name of the parameter, e.g. "Blurriness".
+            - "value": The value to set for the parameter.
+            Defaults to an empty list (apply the effect with its default parameters).
+    """
+
+    command = createCommand("appendVideoFilter", {
+        "sequenceId": sequence_id,
+        "videoTrackIndex": video_track_index,
+        "trackItemIndex": track_item_index,
+        "effectName": effect_match_name,
+        "properties": params
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def list_effects():
+    """
+    Returns the available video effect (filter) match names and display names that can be
+    applied to a clip via apply_effect(). Use this to resolve a recorded effect to its
+    match name.
+    """
+
+    command = createCommand("listEffects", {
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def list_transitions():
+    """
+    Returns the available video transition match names that can be applied between clips via
+    append_video_transition(). Use this to resolve a recorded transition to its match name.
+    """
+
+    command = createCommand("listTransitions", {
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""

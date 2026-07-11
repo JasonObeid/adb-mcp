@@ -131,19 +131,31 @@ const setVideoClipProperties = async (command) => {
 
     let trackItem = await getTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
 
-    let opacityParam = await getParam(trackItem, "AE.ADBE Opacity", "Opacity")
-    let opacityKeyframe = await opacityParam.createKeyframe(options.opacity)
+    // Partial setter: only touch the properties the caller actually provided.
+    // Opacity and Blend Mode are two params on the intrinsic Opacity effect;
+    // setting both unconditionally resets blend mode to NORMAL when a caller
+    // only means to change opacity (e.g. a fade). Callers omit a property by
+    // passing null (or leaving it out of the command options).
+    let setValueActions = []
 
-    let blendModeParam = await getParam(trackItem, "AE.ADBE Opacity", "Blend Mode")
+    if (options.opacity !== undefined && options.opacity !== null) {
+        let opacityParam = await getParam(trackItem, "AE.ADBE Opacity", "Opacity")
+        let opacityKeyframe = await opacityParam.createKeyframe(options.opacity)
+        setValueActions.push(opacityParam.createSetValueAction(opacityKeyframe))
+    }
 
-    let mode = BLEND_MODES[options.blendMode.toUpperCase()]
-    let blendModeKeyframe = await blendModeParam.createKeyframe(mode)
+    if (options.blendMode !== undefined && options.blendMode !== null) {
+        let blendModeParam = await getParam(trackItem, "AE.ADBE Opacity", "Blend Mode")
+        let mode = BLEND_MODES[options.blendMode.toUpperCase()]
+        let blendModeKeyframe = await blendModeParam.createKeyframe(mode)
+        setValueActions.push(blendModeParam.createSetValueAction(blendModeKeyframe))
+    }
 
-    execute(() => {
-        let opacityAction = opacityParam.createSetValueAction(opacityKeyframe);
-        let blendModeAction = blendModeParam.createSetValueAction(blendModeKeyframe);
-        return [opacityAction, blendModeAction]
-    }, project)
+    if (setValueActions.length === 0) {
+        return
+    }
+
+    execute(() => setValueActions, project)
 
     // /AE.ADBE Opacity
     //Opacity

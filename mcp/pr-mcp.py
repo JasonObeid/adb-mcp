@@ -782,13 +782,18 @@ def append_video_transition(sequence_id: str, video_track_index: int, track_item
 
 
 @mcp.tool()
-def set_video_clip_properties(sequence_id: str, video_track_index: int, track_item_index: int, opacity: int = 100, blend_mode: str = "NORMAL"):
+def set_video_clip_properties(sequence_id: str, video_track_index: int, track_item_index: int, opacity: int | None = None, blend_mode: str | None = None):
     """
-    Sets opacity and blend mode properties for a video clip in the timeline.
+    Sets opacity and/or blend mode properties for a video clip in the timeline.
 
     This function modifies the visual properties of a specific clip located on a specific video track
     in the active Premiere Pro sequence. The clip is identified by its track index and item index
     within that track.
+
+    Only the properties you pass are changed. Opacity and blend mode are two params on the same
+    intrinsic Opacity effect, so this is a PARTIAL setter: omitting one (leaving it None) leaves that
+    property untouched rather than resetting it to a default. Pass opacity alone to change a fade
+    without disturbing the clip's blend mode, and vice versa.
 
     Args:
         sequence_id (str) : The id for the sequence to set the video clip properties
@@ -798,19 +803,23 @@ def set_video_clip_properties(sequence_id: str, video_track_index: int, track_it
             Clip indices start at 0 for the first clip on the track.
         opacity (int, optional): The opacity value to set for the clip, as a percentage.
             Valid values range from 0 (completely transparent) to 100 (completely opaque).
-            Defaults to 100.
+            Omit (None) to leave opacity unchanged.
         blend_mode (str, optional): The blend mode to apply to the clip.
             Must be one of the valid blend modes supported by Premiere Pro.
-            Defaults to "NORMAL".
+            Omit (None) to leave the blend mode unchanged.
     """
 
-    command = createCommand("setVideoClipProperties", {
+    options = {
         "sequenceId": sequence_id,
-        "videoTrackIndex":video_track_index,
-        "trackItemIndex":track_item_index,
-        "opacity":opacity,
-        "blendMode":blend_mode
-    })
+        "videoTrackIndex": video_track_index,
+        "trackItemIndex": track_item_index,
+    }
+    if opacity is not None:
+        options["opacity"] = opacity
+    if blend_mode is not None:
+        options["blendMode"] = blend_mode
+
+    command = createCommand("setVideoClipProperties", options)
 
     return sendCommand(command)
 
